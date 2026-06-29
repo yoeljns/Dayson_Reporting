@@ -2,36 +2,57 @@
 
 import { ensureSchema } from "@/lib/bootstrap";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasServiceKey } from "@/lib/supabase/env";
 
 export type SetupState = "schema_missing" | "needs_admin" | "ready";
 
 /**
  * Determine where the system is in first-run setup:
- *  - schema_missing: tables not installed yet (auto-install failed/unavailable)
+ *  - schema_missing: tables not installed / config incomplete → show notice
  *  - needs_admin: schema present but no users → show the create-admin form
  *  - ready: at least one user exists → normal login
+ *
+ * Never throws — any failure resolves to schema_missing with a message so the
+ * page can render guidance instead of a server-side exception.
  */
 export async function getSetupState(): Promise<{
   state: SetupState;
   error?: string;
 }> {
-  let bootstrapError: string | undefined;
   try {
-    await ensureSchema();
+    if (!hasServiceKey()) {
+      return {
+        state: "schema_missing",
+        error:
+          "SUPABASE_SERVICE_ROLE_KEY ortam değişkeni tanımlı değil. Vercel'de Supabase entegrasyonunu tamamlayın ve yeniden deploy edin.",
+      };
+    }
+
+    let bootstrapError: string | undefined;
+    try {
+      await ensureSchema();
+    } catch (e) {
+      bootstrapError = e instanceof Error ? e.message : String(e);
+    }
+
+    const admin = createAdminClient();
+    const { count, error } = await admin
+      .from("profiles")
+      .select("id", { count: "exact", head: true });
+
+    if (error) {
+      return {
+        state: "schema_missing",
+        error: bootstrapError ?? error.message,
+      };
+    }
+    return { state: (count ?? 0) === 0 ? "needs_admin" : "ready" };
   } catch (e) {
-    bootstrapError = e instanceof Error ? e.message : String(e);
+    return {
+      state: "schema_missing",
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
-
-  const admin = createAdminClient();
-  const { count, error } = await admin
-    .from("profiles")
-    .select("id", { count: "exact", head: true });
-
-  if (error) {
-    // Most likely the table doesn't exist yet (schema not installed).
-    return { state: "schema_missing", error: bootstrapError ?? error.message };
-  }
-  return { state: (count ?? 0) === 0 ? "needs_admin" : "ready" };
 }
 
 /** Back-compat helper for the login page. */
@@ -46,7 +67,18 @@ export async function createFirstAdmin(input: {
   fullName: string;
   password: string;
 }): Promise<{ ok?: boolean; error?: string }> {
-  await ensureSchema();
+  if (!hasServiceKey()) {
+    return {
+      error:
+        "Sunucu yapılandırması eksik (service role key). Lütfen Vercel ortam değişkenlerini kontrol edin.",
+    };
+  }
+
+  try {
+    await ensureSchema();
+  } catch {
+    /* surfaced below if the table is missing */
+  }
   const admin = createAdminClient();
 
   const { count, error: countErr } = await admin

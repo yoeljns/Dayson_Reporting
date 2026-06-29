@@ -13,12 +13,21 @@ export function SchemaMissingNotice({ error }: { error?: string }) {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle className="text-xl">Veritabanı kurulumu gerekli</CardTitle>
+          <CardTitle className="text-xl">Kurulum tamamlanamadı</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Tablolar henüz oluşturulmamış. Bir kerelik şu adımı yapın:
+            Aşağıdaki teknik detayı okuyun. <b>“key” / “service role” / “ortam
+            değişkeni”</b> geçiyorsa sorun Vercel’deki eksik ortam
+            değişkenidir (Supabase entegrasyonunu tamamlayıp yeniden deploy
+            edin). Aksi halde tablolar kurulmamıştır — şu bir kerelik adımı
+            yapın:
           </p>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
+          {error && (
+            <p className="rounded-md bg-destructive/10 p-2 font-mono text-xs text-destructive">
+              {error}
+            </p>
+          )}
           <ol className="list-decimal space-y-2 pl-5">
             <li>
               Supabase paneli → sol menü <b>SQL Editor</b> → <b>New query</b>.
@@ -52,11 +61,6 @@ export function SchemaMissingNotice({ error }: { error?: string }) {
               açılacak.
             </li>
           </ol>
-          {error && (
-            <p className="rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground">
-              Teknik detay: {error}
-            </p>
-          )}
         </CardContent>
       </Card>
     </div>

@@ -24,9 +24,17 @@ export function supabaseAnonKey(): string {
 }
 
 export function supabaseServiceKey(): string {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    ""
+  );
 }
 
 export function hasSupabaseConfig(): boolean {
   return Boolean(supabaseUrl() && supabaseAnonKey());
+}
+
+export function hasServiceKey(): boolean {
+  return Boolean(supabaseUrl() && supabaseServiceKey());
 }
