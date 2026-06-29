@@ -1,14 +1,24 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase/env";
 
 const PUBLIC_PATHS = ["/login", "/auth", "/setup"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  const url = supabaseUrl();
+  const anonKey = supabaseAnonKey();
+
+  // Supabase not configured yet — don't crash; let requests through so the app
+  // can render a clear error/setup state instead of a 500 on every route.
+  if (!url || !anonKey) {
+    return response;
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         getAll() {

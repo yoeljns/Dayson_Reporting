@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase/env";
 
 export const metadata: Metadata = {
   title: "Dayson Raporlama",
@@ -28,7 +29,12 @@ export default function RootLayout({
   return (
     <html lang="tr">
       <body>
-        <Providers>{children}</Providers>
+        <Providers
+          supabaseUrl={supabaseUrl()}
+          supabaseAnonKey={supabaseAnonKey()}
+        >
+          {children}
+        </Providers>
       </body>
     </html>
   );

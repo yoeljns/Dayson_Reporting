@@ -2,8 +2,23 @@
 
 import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { setPublicConfig } from "@/lib/supabase/public-config";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  supabaseUrl,
+  supabaseAnonKey,
+}: {
+  children: React.ReactNode;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+}) {
+  // Make the server-resolved Supabase config available to the browser client
+  // before any child renders / queries.
+  if (supabaseUrl && supabaseAnonKey) {
+    setPublicConfig({ url: supabaseUrl, anonKey: supabaseAnonKey });
+  }
+
   const [queryClient] = useState(
     () =>
       new QueryClient({
