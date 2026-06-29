@@ -9,7 +9,9 @@ import type {
 } from "@/lib/enums";
 
 export async function createComplaint(input: {
-  companyId: string;
+  companyId?: string | null;
+  complainantName?: string | null;
+  complainantPhone?: string | null;
   visitId?: string | null;
   type: ComplaintType;
   ownerDept: ComplaintOwnerDept;
@@ -27,11 +29,17 @@ export async function createComplaint(input: {
   if (!input.title.trim() || !input.description.trim()) {
     return { error: "Başlık ve açıklama zorunludur." };
   }
+  // Need at least one way to identify who/what the complaint is about.
+  if (!input.companyId && !input.complainantName?.trim()) {
+    return { error: "Distribütör seçin ya da şikayet eden kişiyi yazın." };
+  }
 
   const { data, error } = await supabase
     .from("complaints")
     .insert({
-      company_id: input.companyId,
+      company_id: input.companyId || null,
+      complainant_name: input.complainantName?.trim() || null,
+      complainant_phone: input.complainantPhone?.trim() || null,
       reported_by: user.id,
       visit_id: input.visitId || null,
       type: input.type,

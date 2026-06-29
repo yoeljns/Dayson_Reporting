@@ -33,7 +33,7 @@ export default async function ComplaintDetailPage({
   const { data: c } = await supabase
     .from("complaints")
     .select(
-      "id, type, owner_dept, status, title, description, priority, due_date, created_at, companies(name), reporter:reported_by(full_name)"
+      "id, type, owner_dept, status, title, description, priority, due_date, created_at, complainant_name, complainant_phone, companies(name), reporter:reported_by(full_name)"
     )
     .eq("id", params.id)
     .single();
@@ -58,7 +58,9 @@ export default async function ComplaintDetailPage({
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-lg font-semibold">{c.title}</h1>
-          <p className="text-sm text-muted-foreground">{company?.name}</p>
+          <p className="text-sm text-muted-foreground">
+            {c.complainant_name || company?.name || "—"}
+          </p>
         </div>
         <Badge variant={statusVariant[c.status as ComplaintStatus]}>
           {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
@@ -84,7 +86,10 @@ export default async function ComplaintDetailPage({
             value={COMPLAINT_PRIORITY_LABELS[c.priority] ?? String(c.priority)}
           />
           <Row label="Termin" value={c.due_date ?? "—"} />
-          <Row label="Bildiren" value={reporter?.full_name ?? "—"} />
+          <Row label="Şikayet eden" value={c.complainant_name ?? "—"} />
+          <Row label="Telefon" value={c.complainant_phone ?? "—"} />
+          <Row label="Bağlı distribütör" value={company?.name ?? "—"} />
+          <Row label="Bildiren (pazarlamacı)" value={reporter?.full_name ?? "—"} />
           <div className="pt-2">
             <div className="text-muted-foreground">Açıklama</div>
             <p className="whitespace-pre-wrap">{c.description}</p>

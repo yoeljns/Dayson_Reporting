@@ -101,7 +101,9 @@ export interface VisitAnswer {
 
 export interface Complaint {
   id: string;
-  company_id: string;
+  company_id: string | null;
+  complainant_name: string | null;
+  complainant_phone: string | null;
   reported_by: string;
   visit_id: string | null;
   type: ComplaintType;

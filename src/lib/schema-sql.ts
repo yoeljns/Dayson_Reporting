@@ -183,21 +183,25 @@ create index idx_visit_answers_visit on visit_answers(visit_id);
 -- complaints + complaint_events (work-order + timeline)
 -- ---------------------------------------------------------------------------
 create table complaints (
-  id          uuid primary key default gen_random_uuid(),
-  company_id  uuid not null references companies(id),
-  reported_by uuid not null references profiles(id),
-  visit_id    uuid references visits(id),
-  type        complaint_type not null,
-  owner_dept  complaint_owner_dept not null,
-  assignee_id uuid references profiles(id),
-  status      complaint_status not null default 'acik',
-  title       text not null,
-  description text not null,
-  priority    int not null default 2,
-  due_date    date,
-  resolved_at timestamptz,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id                 uuid primary key default gen_random_uuid(),
+  -- Optional link to one of our distributors (the complainant may be tied to one).
+  company_id         uuid references companies(id),
+  -- The complainant need not be a registered company/user — capture them as text.
+  complainant_name   text,
+  complainant_phone  text,
+  reported_by        uuid not null references profiles(id),
+  visit_id           uuid references visits(id),
+  type               complaint_type not null,
+  owner_dept         complaint_owner_dept not null,
+  assignee_id        uuid references profiles(id),
+  status             complaint_status not null default 'acik',
+  title              text not null,
+  description        text not null,
+  priority           int not null default 2,
+  due_date           date,
+  resolved_at        timestamptz,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
 );
 create index idx_complaints_status on complaints(status);
 create index idx_complaints_dept on complaints(owner_dept);
@@ -515,4 +519,19 @@ where q.code = 'sonraki_aksiyon'
 insert into competitors (name) values
   ('Rakip A'), ('Rakip B'), ('Rakip C')
 on conflict (name) do nothing;
+`;
+
+// Idempotent patches applied on every boot (ALTER ... IF NOT EXISTS etc.),
+// so existing databases pick up additive schema changes.
+export const PATCH_SQL = `-- ============================================================================
+-- Patch: complaints can be raised by someone NOT registered in the system,
+-- optionally linked to one of our distributors.
+-- Idempotent — safe to run on every boot (handled by the runtime bootstrap).
+-- ============================================================================
+
+alter table complaints add column if not exists complainant_name  text;
+alter table complaints add column if not exists complainant_phone text;
+
+-- The distributor link is optional now (the complainant may be external).
+alter table complaints alter column company_id drop not null;
 `;

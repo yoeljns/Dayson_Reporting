@@ -47,7 +47,7 @@ export default async function ComplaintQueuePage({
   let query = supabase
     .from("complaints")
     .select(
-      "id, title, type, status, owner_dept, priority, due_date, created_at, companies(name), reporter:reported_by(full_name)"
+      "id, title, type, status, owner_dept, priority, due_date, created_at, complainant_name, companies(name), reporter:reported_by(full_name)"
     )
     .order("priority", { ascending: true })
     .order("created_at", { ascending: false })
@@ -119,7 +119,7 @@ export default async function ComplaintQueuePage({
                     <div className="min-w-0">
                       <div className="truncate font-medium">{c.title}</div>
                       <div className="truncate text-xs text-muted-foreground">
-                        {company?.name} ·{" "}
+                        {company?.name || c.complainant_name || "—"} ·{" "}
                         {COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]} ·{" "}
                         {COMPLAINT_OWNER_DEPT_LABELS[c.owner_dept as keyof typeof COMPLAINT_OWNER_DEPT_LABELS]} ·{" "}
                         {reporter?.full_name}

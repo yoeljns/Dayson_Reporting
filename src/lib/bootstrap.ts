@@ -1,5 +1,5 @@
 import { Client } from "pg";
-import { SCHEMA_SQL, SEED_SQL } from "@/lib/schema-sql";
+import { SCHEMA_SQL, SEED_SQL, PATCH_SQL } from "@/lib/schema-sql";
 
 /**
  * One-time, self-applying database setup. Runs the bundled schema + seed the
@@ -70,17 +70,23 @@ async function runEnsureSchema(): Promise<boolean> {
     const { rows } = await client.query(
       "select to_regclass('public.profiles') as exists"
     );
-    if (rows[0]?.exists != null) {
-      return true; // already set up
+
+    if (rows[0]?.exists == null) {
+      // Fresh DB. Atomic: a multi-statement simple query is one transaction.
+      await client.query(SCHEMA_SQL);
+      // Seed is idempotent (on conflict do nothing); failures non-fatal.
+      try {
+        await client.query(SEED_SQL);
+      } catch (seedErr) {
+        console.error("[bootstrap] Seed verisi uygulanamadı:", seedErr);
+      }
     }
 
-    // Atomic: a multi-statement simple query is one implicit transaction.
-    await client.query(SCHEMA_SQL);
-    // Seed is idempotent (on conflict do nothing); failures here are non-fatal.
+    // Apply idempotent additive patches every boot so existing DBs stay current.
     try {
-      await client.query(SEED_SQL);
-    } catch (seedErr) {
-      console.error("[bootstrap] Seed verisi uygulanamadı:", seedErr);
+      await client.query(PATCH_SQL);
+    } catch (patchErr) {
+      console.error("[bootstrap] Patch uygulanamadı:", patchErr);
     }
     return true;
   } catch (err) {

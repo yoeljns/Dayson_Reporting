@@ -37,6 +37,8 @@ function NewComplaintForm() {
   const visitId = params.get("visit");
 
   const [company, setCompany] = useState<PickedCompany | null>(null);
+  const [complainantName, setComplainantName] = useState("");
+  const [complainantPhone, setComplainantPhone] = useState("");
   const [type, setType] = useState<ComplaintType>("urun_hatasi");
   const [ownerDept, setOwnerDept] =
     useState<ComplaintOwnerDept>("kalite_uretim");
@@ -63,13 +65,15 @@ function NewComplaintForm() {
 
   function submit() {
     setError(null);
-    if (!company) {
-      setError("Firma seçiniz.");
+    if (!company && !complainantName.trim()) {
+      setError("Distribütör seçin ya da şikayet eden kişiyi yazın.");
       return;
     }
     startTransition(async () => {
       const res = await createComplaint({
-        companyId: company.id,
+        companyId: company?.id ?? null,
+        complainantName: complainantName || null,
+        complainantPhone: complainantPhone || null,
         visitId,
         type,
         ownerDept,
@@ -93,8 +97,25 @@ function NewComplaintForm() {
       <Card>
         <CardContent className="space-y-4 pt-4">
           <div className="space-y-1.5">
-            <Label>Firma *</Label>
+            <Label>Şikayet eden kişi (sistemde olmak zorunda değil)</Label>
+            <Input
+              placeholder="Ad Soyad / firma"
+              value={complainantName}
+              onChange={(e) => setComplainantName(e.target.value)}
+            />
+            <Input
+              placeholder="Telefon (opsiyonel)"
+              value={complainantPhone}
+              onChange={(e) => setComplainantPhone(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Bağlı distribütör (opsiyonel)</Label>
             <CompanyPicker value={company} onChange={setCompany} />
+            <p className="text-xs text-muted-foreground">
+              Şikayet eden bir distribütörümüze bağlıysa seçin.
+            </p>
           </div>
 
           <div className="space-y-1.5">

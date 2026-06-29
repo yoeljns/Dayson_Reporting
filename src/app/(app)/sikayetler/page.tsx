@@ -26,7 +26,9 @@ export default async function ComplaintsListPage() {
 
   const { data: complaints } = await supabase
     .from("complaints")
-    .select("id, title, type, status, created_at, companies(name)")
+    .select(
+      "id, title, type, status, created_at, complainant_name, companies(name)"
+    )
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -56,7 +58,7 @@ export default async function ComplaintsListPage() {
                     <div>
                       <div className="font-medium">{c.title}</div>
                       <div className="text-xs text-muted-foreground">
-                        {company?.name} ·{" "}
+                        {company?.name || c.complainant_name || "—"} ·{" "}
                         {COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]}
                       </div>
                     </div>
