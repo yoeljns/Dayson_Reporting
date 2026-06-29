@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { useFormState, useFormStatus } from "react-dom";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { login } from "./actions";
+import { setupNeeded } from "@/app/(auth)/setup/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,10 +28,18 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
+  const router = useRouter();
   const params = useSearchParams();
   const redirectTo = params.get("redirect") ?? "/";
   const passiveError = params.get("error") === "pasif";
   const [state, formAction] = useFormState(login, undefined);
+
+  // First run (no users yet): send to the setup screen.
+  useEffect(() => {
+    setupNeeded().then((needed) => {
+      if (needed) router.replace("/setup");
+    });
+  }, [router]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">

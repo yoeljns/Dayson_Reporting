@@ -26,44 +26,41 @@ seçmeli/enum olduğu için veriler sonradan analiz edilebilir.
 Next.js 14 (App Router) · TypeScript · Supabase (Postgres + Auth + RLS) ·
 Tailwind · react-hook-form + zod · SheetJS · TanStack Query · idb (IndexedDB).
 
-## Kurulum
+## Dağıtım (Vercel) — sıfır kurulum
 
-### 1. Supabase projesi
+Elle SQL çalıştırmaya gerek yok. Uygulama **ilk açılışta veritabanı şemasını
+kendisi kurar** ve seni "ilk yönetici hesabı oluştur" ekranına alır.
 
-1. [supabase.com](https://supabase.com) üzerinde proje açın.
-2. SQL editöründe sırayla çalıştırın:
-   - `supabase/migrations/0001_init.sql` (şema, enum, RLS, RPC, trigger)
-   - `supabase/migrations/0002_seed.sql` (standart ziyaret soru seti + rakipler)
-3. **Settings → API**'dan `URL`, `anon key`, `service_role key` değerlerini alın.
+1. Bu repoyu Vercel'e bağlayın (Import Project).
+2. Proje ekranında **Integrations → Supabase**'i ekleyin (yeni veya mevcut bir
+   Supabase projesi seçin). Entegrasyon gerekli tüm ortam değişkenlerini
+   (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `POSTGRES_URL_NON_POOLING`) otomatik ekler.
+3. **Deploy.**
+4. Açılan adreste uygulama şemayı otomatik kurar; **`/setup`** ekranında
+   yönetici hesabınızı oluşturursunuz. Tamam — sistem çalışıyor.
 
-### 2. Ortam değişkenleri
+Sonraki kullanıcıları uygulama içinden **Yönetim → Kullanıcılar** ekranından
+eklersiniz (rol: pazarlamacı / yönetici / admin).
 
-`.env.example` dosyasını `.env.local` olarak kopyalayın ve doldurun:
+## Yerel geliştirme
 
-```
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=...   # yalnız sunucu; importer + kullanıcı yönetimi
-```
-
-### 3. Çalıştırma
+1. Bir Supabase projesi açın, **Settings → API** ve **Settings → Database**'den
+   değerleri alın.
+2. `.env.example` → `.env.local` kopyalayın ve doldurun (özellikle
+   `POSTGRES_URL_NON_POOLING` — şemanın otomatik kurulması için).
+3. Çalıştırın:
 
 ```bash
 npm install
 npm run dev
 ```
 
-### 4. İlk admin kullanıcı
+İlk açılışta şema kurulur; `/setup` ile yönetici hesabını oluşturun.
 
-İlk kullanıcıyı Supabase **Authentication → Add user** ile oluşturun, ardından
-SQL editöründe rolünü yükseltin:
-
-```sql
-update profiles set role = 'admin' where email = 'siz@firma.com';
-```
-
-Sonraki kullanıcıları uygulama içinden **Yönetim → Kullanıcılar** ekranından
-ekleyebilirsiniz.
+> Şemayı elle kurmak isterseniz `supabase/migrations/0001_init.sql` ve
+> `0002_seed.sql` dosyalarını Supabase SQL editöründe çalıştırabilirsiniz; bu
+> durumda otomatik kurulum atlanır.
 
 ## Veri akışı
 
@@ -74,13 +71,9 @@ ekleyebilirsiniz.
 3. **Pazarlamacı** sahada ziyaret/şikayet/rakip kaydı girer; yalnız kendi
    bayilerini görür.
 
-## Dağıtım (Vercel)
-
-1. Repoyu Vercel'e bağlayın.
-2. Üç ortam değişkenini Vercel proje ayarlarına girin.
-3. Deploy. Mobilde "Ana ekrana ekle" ile PWA olarak kurulabilir.
-
 ## Notlar
+
+- Mobilde "Ana ekrana ekle" ile PWA olarak kurulabilir.
 
 - PWA ikonları `public/icons/icon-192.png` ve `icon-512.png` olarak
   eklenmelidir (manifest bunlara referans verir). Eklenene kadar uygulama
