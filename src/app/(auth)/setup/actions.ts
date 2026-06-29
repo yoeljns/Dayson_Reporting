@@ -3,19 +3,41 @@
 import { ensureSchema } from "@/lib/bootstrap";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-/** True when the system has no users yet (first-run). */
-export async function setupNeeded(): Promise<boolean> {
+export type SetupState = "schema_missing" | "needs_admin" | "ready";
+
+/**
+ * Determine where the system is in first-run setup:
+ *  - schema_missing: tables not installed yet (auto-install failed/unavailable)
+ *  - needs_admin: schema present but no users → show the create-admin form
+ *  - ready: at least one user exists → normal login
+ */
+export async function getSetupState(): Promise<{
+  state: SetupState;
+  error?: string;
+}> {
+  let bootstrapError: string | undefined;
   try {
     await ensureSchema();
-    const admin = createAdminClient();
-    const { count, error } = await admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true });
-    if (error) return false;
-    return (count ?? 0) === 0;
-  } catch {
-    return false;
+  } catch (e) {
+    bootstrapError = e instanceof Error ? e.message : String(e);
   }
+
+  const admin = createAdminClient();
+  const { count, error } = await admin
+    .from("profiles")
+    .select("id", { count: "exact", head: true });
+
+  if (error) {
+    // Most likely the table doesn't exist yet (schema not installed).
+    return { state: "schema_missing", error: bootstrapError ?? error.message };
+  }
+  return { state: (count ?? 0) === 0 ? "needs_admin" : "ready" };
+}
+
+/** Back-compat helper for the login page. */
+export async function setupNeeded(): Promise<boolean> {
+  const { state } = await getSetupState();
+  return state !== "ready";
 }
 
 /** Create the first admin account. Guarded so it can't run after setup. */
@@ -27,9 +49,15 @@ export async function createFirstAdmin(input: {
   await ensureSchema();
   const admin = createAdminClient();
 
-  const { count } = await admin
+  const { count, error: countErr } = await admin
     .from("profiles")
     .select("id", { count: "exact", head: true });
+  if (countErr) {
+    return {
+      error:
+        "Veritabanı şeması bulunamadı. Lütfen önce kurulum SQL'ini çalıştırın.",
+    };
+  }
   if ((count ?? 0) > 0) {
     return { error: "Kurulum zaten tamamlanmış." };
   }
