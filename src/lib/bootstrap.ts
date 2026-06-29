@@ -15,13 +15,32 @@ import { SCHEMA_SQL, SEED_SQL } from "@/lib/schema-sql";
  * state. We guard with an existence check and tolerate a concurrent winner.
  */
 
-function connectionString(): string | null {
+function rawConnectionString(): string | null {
   return (
     process.env.POSTGRES_URL ||
     process.env.POSTGRES_URL_NON_POOLING ||
     process.env.DATABASE_URL ||
     null
   );
+}
+
+/**
+ * Supabase connection strings carry `sslmode=require`, which pg now treats as
+ * `verify-full` and that OVERRIDES our `ssl.rejectUnauthorized:false`, failing
+ * on Supabase's self-signed chain. Strip the ssl params so our ssl object wins.
+ */
+function connectionString(): string | null {
+  const raw = rawConnectionString();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("ssl");
+    u.searchParams.delete("uselibpqcompat");
+    return u.toString();
+  } catch {
+    return raw;
+  }
 }
 
 // Memoize so the work runs at most once per server process.
@@ -43,8 +62,6 @@ async function runEnsureSchema(): Promise<boolean> {
     connectionString: conn,
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10_000,
-    // pgbouncer (transaction mode) can't use the extended/prepared protocol.
-    statement_timeout: 60_000,
   });
 
   try {
