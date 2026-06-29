@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Çevrimdışı — Dayson Raporlama</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        background: #f8fafc;
+        color: #0f172a;
+        text-align: center;
+        padding: 1rem;
+      }
+      .box { max-width: 22rem; }
+      h1 { font-size: 1.25rem; }
+      p { color: #64748b; }
+      button {
+        margin-top: 1rem;
+        padding: 0.6rem 1.2rem;
+        border: 0;
+        border-radius: 0.5rem;
+        background: #2563eb;
+        color: white;
+        font-size: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>Çevrimdışısınız</h1>
+      <p>
+        İnternet bağlantısı yok. Kaydettiğiniz taslaklar cihazınızda tutulur ve
+        bağlantı geldiğinde otomatik gönderilir.
+      </p>
+      <button onclick="location.reload()">Tekrar dene</button>
+    </div>
+  </body>
+</html>

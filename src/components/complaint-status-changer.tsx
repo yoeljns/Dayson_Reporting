@@ -1,0 +1,94 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import {
+  COMPLAINT_TRANSITIONS,
+  COMPLAINT_STATUS_LABELS,
+  type ComplaintStatus,
+} from "@/lib/enums";
+import { changeComplaintStatus } from "@/app/(app)/sikayet/actions";
+
+export function ComplaintStatusChanger({
+  complaintId,
+  current,
+}: {
+  complaintId: string;
+  current: ComplaintStatus;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const next = COMPLAINT_TRANSITIONS[current];
+  const [toStatus, setToStatus] = useState<ComplaintStatus | "">(
+    next[0] ?? ""
+  );
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  if (next.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Bu şikayet kapanmış. Durum değişikliği yapılamaz.
+      </p>
+    );
+  }
+
+  function submit() {
+    setError(null);
+    if (!toStatus) return;
+    if (!note.trim()) {
+      setError("Açıklama (not) zorunludur.");
+      return;
+    }
+    startTransition(async () => {
+      const res = await changeComplaintStatus({
+        complaintId,
+        toStatus: toStatus as ComplaintStatus,
+        note,
+      });
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setNote("");
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="toStatus">Yeni durum</Label>
+        <Select
+          id="toStatus"
+          value={toStatus}
+          onChange={(e) => setToStatus(e.target.value as ComplaintStatus)}
+        >
+          {next.map((s) => (
+            <option key={s} value={s}>
+              {COMPLAINT_STATUS_LABELS[s]}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="note">Yapılan işlem / açıklama *</Label>
+        <Textarea
+          id="note"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={3}
+          placeholder="Ne yapıldığını yazın…"
+        />
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button disabled={pending} onClick={submit} className="w-full">
+        Durumu Güncelle
+      </Button>
+    </div>
+  );
+}
