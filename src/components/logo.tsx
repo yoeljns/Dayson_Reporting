@@ -1,34 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Brand logo. Shows a clean wordmark by default and swaps to /logo.png ONLY
- * once that file actually loads — so a missing logo never shows a broken image.
- * Drop the real logo at public/logo.png to use it.
+ * Brand logo. Shows /logo.png; falls back to a wordmark only if the image is
+ * missing/broken. Handles the cached-image case (where onLoad may not fire) via
+ * a mount check on the element's `complete`/`naturalWidth`.
  */
 export function Logo({
   className,
-  height = 28,
+  height = 32,
 }: {
   className?: string;
   height?: number;
 }) {
-  const [loaded, setLoaded] = useState(false);
+  const ref = useRef<HTMLImageElement>(null);
+  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+
+  useEffect(() => {
+    const img = ref.current;
+    if (img && img.complete) {
+      setStatus(img.naturalWidth > 0 ? "ok" : "error");
+    }
+  }, []);
 
   return (
     <span className="inline-flex items-center">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
+        ref={ref}
         src="/logo.png"
         alt="Dayson Avrupa Group"
-        style={{ height, width: "auto", display: loaded ? "block" : "none" }}
-        className={cn("block rounded-md bg-white p-1", className)}
-        onLoad={() => setLoaded(true)}
-        onError={() => setLoaded(false)}
+        style={{
+          height,
+          width: "auto",
+          display: status === "error" ? "none" : "block",
+        }}
+        className={cn("rounded-md bg-white p-1", className)}
+        onLoad={() => setStatus("ok")}
+        onError={() => setStatus("error")}
       />
-      {!loaded && (
+      {status === "error" && (
         <span className={cn("font-serif text-lg font-semibold", className)}>
           Avrupa <span className="text-primary">Group</span>
         </span>
