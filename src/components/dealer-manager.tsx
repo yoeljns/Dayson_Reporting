@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmButton } from "@/components/confirm-button";
 import { DEBT_STATUS_LABELS, type DebtStatus } from "@/lib/enums";
 import { assignDealer, deleteCompany } from "@/app/(admin)/admin/bayiler/actions";
 
@@ -54,21 +54,10 @@ export function DealerManager({
     });
   }
 
-  function remove(companyId: string, name: string) {
-    if (
-      !window.confirm(
-        `"${name}" silinsin mi? Geçmiş ziyaret/şikayet kayıtları olan firmalar arşivlenir (kayıtlar korunur).`
-      )
-    )
-      return;
-    startTransition(async () => {
-      const res = await deleteCompany({ companyId });
-      if (res.error) {
-        alert(res.error);
-        return;
-      }
-      router.refresh();
-    });
+  async function remove(companyId: string) {
+    const res = await deleteCompany({ companyId });
+    if (res.error) return;
+    router.refresh();
   }
 
   return (
@@ -116,17 +105,17 @@ export function DealerManager({
                     </option>
                   ))}
                 </Select>
-                <Button
-                  type="button"
+                <ConfirmButton
                   variant="ghost"
                   size="icon"
                   className="text-destructive"
-                  disabled={pending}
-                  onClick={() => remove(d.id, d.name)}
                   title="Sil"
+                  message={`"${d.name}" silinsin mi? Geçmiş ziyaret/şikayet kayıtları olan firmalar arşivlenir (kayıtlar korunur).`}
+                  confirmText="Sil"
+                  onConfirm={() => remove(d.id)}
                 >
                   <Trash2 className="h-4 w-4" />
-                </Button>
+                </ConfirmButton>
               </div>
             </CardContent>
           </Card>
