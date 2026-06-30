@@ -515,10 +515,8 @@ join (values
 where q.code = 'sonraki_aksiyon'
   and not exists (select 1 from question_options o where o.question_id = q.id);
 
--- A couple of starter competitors (admin manages the rest).
-insert into competitors (name) values
-  ('Rakip A'), ('Rakip B'), ('Rakip C')
-on conflict (name) do nothing;
+-- Competitors are added from the field (searchable + add-on-the-fly), so no
+-- placeholder rows are seeded here.
 `;
 
 // Idempotent patches applied on every boot (ALTER ... IF NOT EXISTS etc.),
@@ -534,4 +532,20 @@ alter table complaints add column if not exists complainant_phone text;
 
 -- The distributor link is optional now (the complainant may be external).
 alter table complaints alter column company_id drop not null;
+
+-- ============================================================================
+-- Let salespeople add competitors on the fly from the field, and remove the
+-- placeholder "Rakip A/B/C" seed rows (only if unused).
+-- Idempotent — applied on every boot by the runtime bootstrap.
+-- ============================================================================
+
+drop policy if exists competitors_insert_auth on competitors;
+create policy competitors_insert_auth on competitors for insert
+  with check (auth.uid() is not null);
+
+delete from competitors c
+ where c.name in ('Rakip A', 'Rakip B', 'Rakip C')
+   and not exists (
+     select 1 from competitor_observations o where o.competitor_id = c.id
+   );
 `;

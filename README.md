@@ -71,6 +71,23 @@ npm run dev
 3. **Pazarlamacı** sahada ziyaret/şikayet/rakip kaydı girer; yalnız kendi
    bayilerini görür.
 
+## Kullanıcı ekleme: geçici şifre veya e-posta daveti
+
+Yönetim → Kullanıcılar ekranında iki yol var:
+
+- **Geçici şifre** (varsayılan, ekstra ayar gerektirmez): bir geçici şifre
+  belirleyip kullanıcıya iletirsiniz; kullanıcı **Hesabım** ekranından kendi
+  şifresini değiştirebilir.
+- **E-posta ile davet**: kullanıcı bağlantıya tıklayıp şifresini kendi
+  belirler. Bunun çalışması için Supabase'de iki ayar gerekir:
+  1. **Authentication → Providers/Email → SMTP**: kendi SMTP'nizi tanımlayın
+     (Resend/SendGrid vb.). Varsayılan Supabase e-postası yalnız ekip üyelerine
+     ve çok düşük limitle gönderir.
+  2. **Authentication → URL Configuration → Redirect URLs**: site adresinizi
+     ekleyin, ör. `https://dayson-reporting.vercel.app/**`.
+
+  Bu ayarlar yoksa geçici şifre yöntemini kullanın.
+
 ## Notlar
 
 - Mobilde "Ana ekrana ekle" ile PWA olarak kurulabilir.

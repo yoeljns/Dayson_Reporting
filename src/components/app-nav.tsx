@@ -9,6 +9,7 @@ import {
   Swords,
   Shield,
   LogOut,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/app/(auth)/login/actions";
@@ -44,9 +45,13 @@ export function AppNav({
           Dayson Raporlama
         </Link>
         <div className="flex items-center gap-3">
-          <span className="hidden text-sm text-muted-foreground sm:inline">
-            {fullName}
-          </span>
+          <Link
+            href="/hesap"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <UserCog className="h-4 w-4" />
+            <span className="hidden sm:inline">{fullName}</span>
+          </Link>
           <form action={logout}>
             <button
               type="submit"

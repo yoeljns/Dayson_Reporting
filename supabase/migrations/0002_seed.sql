@@ -87,7 +87,5 @@ join (values
 where q.code = 'sonraki_aksiyon'
   and not exists (select 1 from question_options o where o.question_id = q.id);
 
--- A couple of starter competitors (admin manages the rest).
-insert into competitors (name) values
-  ('Rakip A'), ('Rakip B'), ('Rakip C')
-on conflict (name) do nothing;
+-- Competitors are added from the field (searchable + add-on-the-fly), so no
+-- placeholder rows are seeded here.

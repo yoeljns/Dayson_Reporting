@@ -4,14 +4,16 @@ import { Suspense, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { CompanyPicker, type PickedCompany } from "@/components/company-picker";
+import {
+  CompetitorPicker,
+  type PickedCompetitor,
+} from "@/components/competitor-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { createCompetitorObservation } from "../actions";
-import type { Competitor } from "@/types/db";
 
 export default function NewCompetitorObservationPage() {
   return (
@@ -27,8 +29,7 @@ function NewCompetitorObservationForm() {
   const presetCompany = params.get("company");
   const visitId = params.get("visit");
 
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);
-  const [competitorId, setCompetitorId] = useState("");
+  const [competitor, setCompetitor] = useState<PickedCompetitor | null>(null);
   const [company, setCompany] = useState<PickedCompany | null>(null);
   const [productName, setProductName] = useState("");
   const [price, setPrice] = useState("");
@@ -39,35 +40,28 @@ function NewCompetitorObservationForm() {
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
+    if (!presetCompany) return;
     const supabase = createClient();
     supabase
-      .from("competitors")
-      .select("*")
-      .eq("is_active", true)
-      .order("name")
+      .from("companies")
+      .select("id, name")
+      .eq("id", presetCompany)
+      .single()
       .then(({ data }) => {
-        const list = (data as Competitor[]) ?? [];
-        setCompetitors(list);
-        if (list[0]) setCompetitorId(list[0].id);
+        if (data) setCompany({ id: data.id, name: data.name });
       });
-    if (presetCompany) {
-      supabase
-        .from("companies")
-        .select("id, name")
-        .eq("id", presetCompany)
-        .single()
-        .then(({ data }) => {
-          if (data) setCompany({ id: data.id, name: data.name });
-        });
-    }
   }, [presetCompany]);
 
   function submit() {
     setError(null);
     setSuccess(false);
+    if (!competitor) {
+      setError("Rakip seçin veya ekleyin.");
+      return;
+    }
     startTransition(async () => {
       const res = await createCompetitorObservation({
-        competitorId,
+        competitorId: competitor.id,
         companyId: company?.id ?? null,
         visitId,
         productName,
@@ -93,19 +87,8 @@ function NewCompetitorObservationForm() {
       <Card>
         <CardContent className="space-y-4 pt-4">
           <div className="space-y-1.5">
-            <Label htmlFor="competitor">Rakip *</Label>
-            <Select
-              id="competitor"
-              value={competitorId}
-              onChange={(e) => setCompetitorId(e.target.value)}
-            >
-              {competitors.length === 0 && <option value="">—</option>}
-              {competitors.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            <Label>Rakip *</Label>
+            <CompetitorPicker value={competitor} onChange={setCompetitor} />
           </div>
 
           <div className="space-y-1.5">
@@ -170,7 +153,7 @@ function NewCompetitorObservationForm() {
             </Button>
             <Button
               className="flex-1"
-              disabled={pending || !competitorId}
+              disabled={pending || !competitor}
               onClick={submit}
             >
               Kaydet

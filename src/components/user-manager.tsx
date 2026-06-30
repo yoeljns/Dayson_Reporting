@@ -12,6 +12,7 @@ import { USER_ROLES, USER_ROLE_LABELS, type UserRole } from "@/lib/enums";
 import type { Profile } from "@/types/db";
 import {
   createUser,
+  inviteUser,
   updateUserRole,
   toggleUserActive,
 } from "@/app/(admin)/admin/kullanicilar/actions";
@@ -26,14 +27,21 @@ export function UserManager({ users }: { users: Profile[] }) {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<UserRole>("salesperson");
   const [password, setPassword] = useState("");
+  const [invite, setInvite] = useState(false);
 
   function add() {
     setErr(null);
     setMsg(null);
     startTransition(async () => {
-      const res = await createUser({ email, fullName, role, password });
+      const res = invite
+        ? await inviteUser({ email, fullName, role })
+        : await createUser({ email, fullName, role, password });
       if (res.error) return setErr(res.error);
-      setMsg("Kullanıcı oluşturuldu.");
+      setMsg(
+        invite
+          ? "Davet e-postası gönderildi. Kullanıcı bağlantıya tıklayıp şifresini belirleyecek."
+          : "Kullanıcı oluşturuldu."
+      );
       setEmail("");
       setFullName("");
       setPassword("");
@@ -93,22 +101,40 @@ export function UserManager({ users }: { users: Profile[] }) {
               ))}
             </Select>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pw">Geçici şifre</Label>
-            <Input
-              id="pw"
-              type="text"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+          {!invite && (
+            <div className="space-y-1.5">
+              <Label htmlFor="pw">Geçici şifre</Label>
+              <Input
+                id="pw"
+                type="text"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={invite}
+              onChange={(e) => setInvite(e.target.checked)}
+              className="h-4 w-4"
             />
-          </div>
+            E-posta ile davet gönder (şifreyi kullanıcı kendi belirlesin)
+          </label>
+          {invite && (
+            <p className="text-xs text-muted-foreground sm:col-span-2">
+              Not: Davet e-postasının gönderilebilmesi için Supabase&apos;de SMTP
+              ve yönlendirme (redirect) ayarları yapılmış olmalı (README&apos;e
+              bakın). Yapılmadıysa geçici şifre yöntemini kullanın.
+            </p>
+          )}
           {err && <p className="text-sm text-destructive sm:col-span-2">{err}</p>}
           {msg && (
             <p className="text-sm text-emerald-600 sm:col-span-2">{msg}</p>
           )}
           <div className="sm:col-span-2">
             <Button onClick={add} disabled={pending}>
-              Kullanıcı Oluştur
+              {invite ? "Davet Gönder" : "Kullanıcı Oluştur"}
             </Button>
           </div>
         </CardContent>
