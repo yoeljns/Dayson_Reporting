@@ -30,7 +30,7 @@ export function Logo({
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         ref={ref}
-        src="/logo.png?v=2"
+        src="/logo.png?v=3"
         alt="Dayson Avrupa Group"
         style={{
           height,
