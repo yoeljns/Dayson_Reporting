@@ -22,7 +22,7 @@ const navItems = [
   { href: "/ziyaretler", label: "Ziyaretler", icon: ClipboardList },
   { href: "/plan", label: "Plan", icon: CalendarDays },
   { href: "/sikayetler", label: "Şikayetler", icon: AlertTriangle },
-  { href: "/rakip/yeni", label: "Rakip", icon: Swords },
+  { href: "/rakip", label: "Rakip", icon: Swords },
 ];
 
 export function AppNav({

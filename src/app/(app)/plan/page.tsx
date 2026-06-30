@@ -6,7 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PLAN_STATUS_LABELS, type PlanStatus } from "@/lib/enums";
 import { weekStartOf, shiftWeek, weekRangeLabel } from "@/lib/week";
+import { getPlanDeadline } from "@/lib/settings";
 import { PlanWeekPicker } from "@/components/plan-week-picker";
+import { PlanDeadlineBanner } from "@/components/plan-deadline-banner";
 
 type PlanRow = {
   id: string;
@@ -20,13 +22,17 @@ export default async function PlansPage() {
   const profile = await requireProfile();
   const supabase = createClient();
 
-  const { data } = await supabase
-    .from("visit_plans")
-    .select("id, week_start, status, submitted_at, visit_plan_items(count)")
-    .eq("salesperson_id", profile.id)
-    .order("week_start", { ascending: false });
+  const [{ data }, planDeadline] = await Promise.all([
+    supabase
+      .from("visit_plans")
+      .select("id, week_start, status, submitted_at, visit_plan_items(count)")
+      .eq("salesperson_id", profile.id)
+      .order("week_start", { ascending: false }),
+    getPlanDeadline(),
+  ]);
 
   const plans = (data as PlanRow[] | null) ?? [];
+  const isSalesperson = profile.role === "salesperson";
   const byWeek = new Map(plans.map((p) => [p.week_start, p]));
 
   const thisWeek = weekStartOf();
@@ -55,6 +61,16 @@ export default async function PlansPage() {
 
   return (
     <div className="mx-auto max-w-md space-y-6">
+      {isSalesperson && (
+        <PlanDeadlineBanner
+          enabled={planDeadline.enabled}
+          weekday={planDeadline.weekday}
+          hour={planDeadline.hour}
+          minute={planDeadline.minute}
+          plans={plans.map((p) => ({ week_start: p.week_start, status: p.status }))}
+        />
+      )}
+
       <div>
         <h1 className="text-lg font-semibold">Ziyaret Planı</h1>
         <p className="text-sm text-muted-foreground">

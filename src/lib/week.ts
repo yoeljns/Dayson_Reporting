@@ -14,6 +14,17 @@ const TR_MONTHS = [
 ];
 const TR_DAYS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]; // Mon..Sun
 
+/** Full Turkish weekday names, Monday-first (index 0 = Monday). */
+export const WEEKDAY_NAMES_TR = [
+  "Pazartesi",
+  "Salı",
+  "Çarşamba",
+  "Perşembe",
+  "Cuma",
+  "Cumartesi",
+  "Pazar",
+];
+
 /** Monday (ISO week start) of the week containing `date`, as YYYY-MM-DD. */
 export function weekStartOf(date: Date = new Date()): string {
   return format(startOfWeek(date, { weekStartsOn: 1 }), ISO_FMT);
@@ -63,4 +74,27 @@ export function weekDayOptions(weekStart: string): { iso: string; label: string 
 export function daysSince(iso: string | null): number | null {
   if (!iso) return null;
   return differenceInCalendarDays(new Date(), parseISO(iso));
+}
+
+/**
+ * Local Date for a weekly deadline: the `weekday` (0=Mon … 6=Sun) of the week
+ * starting at `weekStart` (YYYY-MM-DD Monday), at hour:minute. Built from local
+ * date parts so the comparison happens in the device's timezone.
+ */
+export function deadlineFor(
+  weekStart: string,
+  weekday: number,
+  hour: number,
+  minute: number
+): Date {
+  const day = addDays(parseISO(weekStart), weekday);
+  return new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    hour,
+    minute,
+    0,
+    0
+  );
 }

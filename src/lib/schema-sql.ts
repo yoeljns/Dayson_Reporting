@@ -666,4 +666,8 @@ create policy app_settings_admin_write on app_settings for all
 insert into app_settings (key, value)
 values ('eod_reminder', '{"enabled": true, "hour": 18, "minute": 0}'::jsonb)
 on conflict (key) do nothing;
+
+insert into app_settings (key, value)
+values ('plan_deadline', '{"enabled": true, "weekday": 0, "hour": 9, "minute": 0}'::jsonb)
+on conflict (key) do nothing;
 `;

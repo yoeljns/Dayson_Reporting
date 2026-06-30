@@ -18,6 +18,20 @@ export const DEFAULT_EOD_REMINDER: EodReminder = {
   minute: 0,
 };
 
+export type PlanDeadline = {
+  enabled: boolean;
+  weekday: number; // 0=Monday … 6=Sunday
+  hour: number; // 0-23, device-local
+  minute: number; // 0-59
+};
+
+export const DEFAULT_PLAN_DEADLINE: PlanDeadline = {
+  enabled: true,
+  weekday: 0, // Monday
+  hour: 9,
+  minute: 0,
+};
+
 const clamp = (n: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, Math.trunc(n)));
 
@@ -49,5 +63,40 @@ export async function getEodReminder(): Promise<EodReminder> {
     };
   } catch {
     return DEFAULT_EOD_REMINDER;
+  }
+}
+
+/** Read the weekly plan-submission deadline, falling back to the default. */
+export async function getPlanDeadline(): Promise<PlanDeadline> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "plan_deadline")
+      .maybeSingle();
+
+    const v = (data?.value ?? null) as Partial<PlanDeadline> | null;
+    if (!v) return DEFAULT_PLAN_DEADLINE;
+    return {
+      enabled:
+        typeof v.enabled === "boolean"
+          ? v.enabled
+          : DEFAULT_PLAN_DEADLINE.enabled,
+      weekday:
+        typeof v.weekday === "number" && Number.isFinite(v.weekday)
+          ? clamp(v.weekday, 0, 6)
+          : DEFAULT_PLAN_DEADLINE.weekday,
+      hour:
+        typeof v.hour === "number" && Number.isFinite(v.hour)
+          ? clamp(v.hour, 0, 23)
+          : DEFAULT_PLAN_DEADLINE.hour,
+      minute:
+        typeof v.minute === "number" && Number.isFinite(v.minute)
+          ? clamp(v.minute, 0, 59)
+          : DEFAULT_PLAN_DEADLINE.minute,
+    };
+  } catch {
+    return DEFAULT_PLAN_DEADLINE;
   }
 }

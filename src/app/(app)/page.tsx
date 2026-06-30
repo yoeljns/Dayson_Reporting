@@ -2,23 +2,28 @@ import Link from "next/link";
 import { Plus, FileEdit, AlertTriangle, Swords } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
-import { getEodReminder } from "@/lib/settings";
+import { getEodReminder, getPlanDeadline } from "@/lib/settings";
+import { weekStartOf, shiftWeek } from "@/lib/week";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EodReminderBanner } from "@/components/eod-reminder-banner";
+import { PlanDeadlineBanner } from "@/components/plan-deadline-banner";
 import { VISIT_TYPE_LABELS } from "@/lib/enums";
 
 export default async function HomePage() {
   const profile = await requireProfile();
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
+  const isSalesperson = profile.role === "salesperson";
 
   const [
     { data: drafts },
     { count: todayCount },
     { count: openComplaints },
+    { data: plans },
     eod,
+    planDeadline,
   ] = await Promise.all([
     supabase
       .from("visits")
@@ -39,7 +44,13 @@ export default async function HomePage() {
       .from("complaints")
       .select("id", { count: "exact", head: true })
       .in("status", ["acik", "islemde"]),
+    supabase
+      .from("visit_plans")
+      .select("week_start, status")
+      .eq("salesperson_id", profile.id)
+      .gte("week_start", shiftWeek(weekStartOf(), -1)),
     getEodReminder(),
+    getPlanDeadline(),
   ]);
 
   const draftCount = drafts?.length ?? 0;
@@ -52,6 +63,18 @@ export default async function HomePage() {
         minute={eod.minute}
         draftCount={draftCount}
       />
+
+      {isSalesperson && (
+        <PlanDeadlineBanner
+          enabled={planDeadline.enabled}
+          weekday={planDeadline.weekday}
+          hour={planDeadline.hour}
+          minute={planDeadline.minute}
+          plans={
+            (plans as { week_start: string; status: string }[] | null) ?? []
+          }
+        />
+      )}
 
       <div>
         <h1 className="text-xl font-semibold">
@@ -71,32 +94,56 @@ export default async function HomePage() {
           </Button>
         </Link>
 
-        <Link href="/sikayetler" className="block">
-          <Button
-            size="lg"
-            variant="secondary"
-            className="h-14 w-full justify-start text-base"
-          >
-            <AlertTriangle className="mr-3 h-5 w-5 text-amber-600" />
-            Şikayetler
-            {openComplaints ? (
-              <Badge variant="warning" className="ml-auto">
-                {openComplaints}
-              </Badge>
-            ) : null}
-          </Button>
-        </Link>
+        {/* Şikayetler: section + new */}
+        <div className="flex gap-2">
+          <Link href="/sikayetler" className="block flex-1">
+            <Button
+              size="lg"
+              variant="secondary"
+              className="h-14 w-full justify-start text-base"
+            >
+              <AlertTriangle className="mr-3 h-5 w-5 text-amber-600" />
+              Şikayetler
+              {openComplaints ? (
+                <Badge variant="warning" className="ml-auto">
+                  {openComplaints}
+                </Badge>
+              ) : null}
+            </Button>
+          </Link>
+          <Link href="/sikayet/yeni" className="block">
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 whitespace-nowrap"
+            >
+              <Plus className="mr-1 h-5 w-5" /> Yeni
+            </Button>
+          </Link>
+        </div>
 
-        <Link href="/rakip/yeni" className="block">
-          <Button
-            size="lg"
-            variant="secondary"
-            className="h-14 w-full justify-start text-base"
-          >
-            <Swords className="mr-3 h-5 w-5 text-primary" />
-            Rakip Bilgisi
-          </Button>
-        </Link>
+        {/* Rakip Bilgisi: section + new */}
+        <div className="flex gap-2">
+          <Link href="/rakip" className="block flex-1">
+            <Button
+              size="lg"
+              variant="secondary"
+              className="h-14 w-full justify-start text-base"
+            >
+              <Swords className="mr-3 h-5 w-5 text-primary" />
+              Rakip Bilgisi
+            </Button>
+          </Link>
+          <Link href="/rakip/yeni" className="block">
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 whitespace-nowrap"
+            >
+              <Plus className="mr-1 h-5 w-5" /> Yeni
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <Card>
