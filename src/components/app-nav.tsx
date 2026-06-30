@@ -94,8 +94,8 @@ export function AppNav({
         </div>
       </nav>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed bottom-0 left-0 right-0 z-20 flex border-t bg-background sm:hidden">
+      {/* Mobile bottom nav — elevated & high-contrast for PWA (standalone) use */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t-2 border-border bg-card pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_-6px_rgba(40,30,20,0.28)] sm:hidden">
         {items.map((item) => {
           const active =
             item.href === "/"
@@ -106,11 +106,16 @@ export function AppNav({
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px]",
-                active ? "text-primary" : "text-muted-foreground"
+                "relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors",
+                active
+                  ? "text-primary"
+                  : "text-foreground/60 hover:text-foreground"
               )}
             >
-              <item.icon className="h-5 w-5" />
+              {active && (
+                <span className="absolute top-0 h-1 w-8 rounded-b-full bg-primary" />
+              )}
+              <item.icon className={cn("h-6 w-6", active && "stroke-[2.5]")} />
               {item.label}
             </Link>
           );

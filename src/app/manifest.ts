@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Pazarlama saha raporlama sistemi",
     start_url: "/",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#2563eb",
+    background_color: "#EFE9E0",
+    theme_color: "#EFE9E0",
     lang: "tr",
     icons: [
       {

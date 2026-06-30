@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { Plus, FileEdit, AlertTriangle, CalendarDays, History } from "lucide-react";
+import { Plus, FileEdit, AlertTriangle, Swords } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
+import { getEodReminder } from "@/lib/settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { EodReminderBanner } from "@/components/eod-reminder-banner";
 import { VISIT_TYPE_LABELS } from "@/lib/enums";
 
 export default async function HomePage() {
@@ -12,84 +14,88 @@ export default async function HomePage() {
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const [{ data: drafts }, { count: todayCount }, { count: openComplaints }] =
-    await Promise.all([
-      supabase
-        .from("visits")
-        .select("id, visit_type, visit_date, created_at, companies(name, kind)")
-        .eq("status", "taslak")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      supabase
-        .from("visits")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "tamamlandi")
-        .eq("visit_date", today)
-        .is("deleted_at", null),
-      supabase
-        .from("complaints")
-        .select("id", { count: "exact", head: true })
-        .in("status", ["acik", "islemde"]),
-    ]);
+  const [
+    { data: drafts },
+    { count: todayCount },
+    { count: openComplaints },
+    eod,
+  ] = await Promise.all([
+    supabase
+      .from("visits")
+      .select("id, visit_type, visit_date, created_at, companies(name, kind)")
+      .eq("status", "taslak")
+      .eq("salesperson_id", profile.id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("visits")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "tamamlandi")
+      .eq("salesperson_id", profile.id)
+      .eq("visit_date", today)
+      .is("deleted_at", null),
+    supabase
+      .from("complaints")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["acik", "islemde"]),
+    getEodReminder(),
+  ]);
+
+  const draftCount = drafts?.length ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">
-            Merhaba, {profile.full_name || "👋"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Bugün {todayCount ?? 0} ziyaret tamamlandı
-          </p>
-        </div>
+    <div className="space-y-5">
+      <EodReminderBanner
+        enabled={eod.enabled}
+        hour={eod.hour}
+        minute={eod.minute}
+        draftCount={draftCount}
+      />
+
+      <div>
+        <h1 className="text-xl font-semibold">
+          Merhaba, {profile.full_name || "👋"}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Bugün {todayCount ?? 0} ziyaret tamamlandı
+        </p>
       </div>
 
-      <Link href="/ziyaret/yeni" className="block">
-        <Button size="lg" className="h-16 w-full text-lg">
-          <Plus className="mr-2 h-6 w-6" />
-          Yeni Ziyaret
-        </Button>
-      </Link>
+      {/* Primary actions — stacked launcher */}
+      <div className="space-y-3">
+        <Link href="/ziyaret/yeni" className="block">
+          <Button size="lg" className="h-16 w-full justify-start text-lg">
+            <Plus className="mr-3 h-6 w-6" />
+            Yeni Ziyaret
+          </Button>
+        </Link>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/plan">
-          <Card className="h-full transition-colors hover:bg-accent">
-            <CardContent className="flex flex-col items-center gap-1 p-4 text-center">
-              <CalendarDays className="h-6 w-6 text-primary" />
-              <span className="text-sm font-medium">Haftalık Plan</span>
-            </CardContent>
-          </Card>
+        <Link href="/sikayetler" className="block">
+          <Button
+            size="lg"
+            variant="secondary"
+            className="h-14 w-full justify-start text-base"
+          >
+            <AlertTriangle className="mr-3 h-5 w-5 text-amber-600" />
+            Şikayetler
+            {openComplaints ? (
+              <Badge variant="warning" className="ml-auto">
+                {openComplaints}
+              </Badge>
+            ) : null}
+          </Button>
         </Link>
-        <Link href="/son-ziyaretler">
-          <Card className="h-full transition-colors hover:bg-accent">
-            <CardContent className="flex flex-col items-center gap-1 p-4 text-center">
-              <History className="h-6 w-6 text-primary" />
-              <span className="text-sm font-medium">Son Ziyaretler</span>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/sikayet/yeni">
-          <Card className="h-full transition-colors hover:bg-accent">
-            <CardContent className="flex flex-col items-center gap-1 p-4 text-center">
-              <AlertTriangle className="h-6 w-6 text-amber-500" />
-              <span className="text-sm font-medium">Şikayet Bildir</span>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/sikayetler">
-          <Card className="h-full transition-colors hover:bg-accent">
-            <CardContent className="flex flex-col items-center gap-1 p-4 text-center">
-              <span className="text-2xl font-bold">{openComplaints ?? 0}</span>
-              <span className="text-sm text-muted-foreground">
-                Açık şikayet
-              </span>
-            </CardContent>
-          </Card>
+        <Link href="/rakip/yeni" className="block">
+          <Button
+            size="lg"
+            variant="secondary"
+            className="h-14 w-full justify-start text-base"
+          >
+            <Swords className="mr-3 h-5 w-5 text-primary" />
+            Rakip Bilgisi
+          </Button>
         </Link>
       </div>
 
@@ -99,17 +105,15 @@ export default async function HomePage() {
             <FileEdit className="h-3.5 w-3.5" />
             Tamamlanmamış Ziyaretler
           </CardTitle>
-          {drafts && drafts.length > 0 && (
-            <Badge variant="warning">{drafts.length}</Badge>
-          )}
+          {draftCount > 0 && <Badge variant="warning">{draftCount}</Badge>}
         </CardHeader>
         <CardContent className="space-y-2">
-          {!drafts || drafts.length === 0 ? (
+          {draftCount === 0 ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
               Bekleyen taslak yok. 🎉
             </p>
           ) : (
-            drafts.map((d) => {
+            drafts!.map((d) => {
               const company = Array.isArray(d.companies)
                 ? d.companies[0]
                 : (d.companies as { name: string } | null);

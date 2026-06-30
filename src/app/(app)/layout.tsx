@@ -14,7 +14,7 @@ export default async function AppLayout({
   await ensureSchema().catch(() => {});
 
   return (
-    <div className="min-h-screen pb-16 sm:pb-0">
+    <div className="min-h-screen pb-[calc(4.75rem+env(safe-area-inset-bottom))] sm:pb-0">
       <AppNav role={profile.role} fullName={profile.full_name || profile.email} />
       <OfflineSync />
       <main className="container py-4">{children}</main>

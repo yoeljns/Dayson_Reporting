@@ -15,6 +15,7 @@ const adminLinks = [
   { href: "/admin/bayiler", label: "Bayiler", adminOnly: true },
   { href: "/admin/kullanicilar", label: "Kullanıcılar", adminOnly: true },
   { href: "/admin/sorular", label: "Soru Kataloğu", adminOnly: true },
+  { href: "/admin/ayarlar", label: "Ayarlar", adminOnly: true },
 ];
 
 export default async function AdminLayout({
@@ -29,7 +30,7 @@ export default async function AdminLayout({
   const links = adminLinks.filter((l) => !l.adminOnly || isAdmin);
 
   return (
-    <div className="min-h-screen pb-16 sm:pb-0">
+    <div className="min-h-screen pb-[calc(4.75rem+env(safe-area-inset-bottom))] sm:pb-0">
       <AppNav role={profile.role} fullName={profile.full_name || profile.email} />
       <div className="container py-4">
         <div className="mb-4 flex flex-wrap gap-2 overflow-x-auto border-b pb-2">
