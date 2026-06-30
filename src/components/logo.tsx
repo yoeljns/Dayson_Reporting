@@ -24,7 +24,7 @@ export function Logo({
         src="/logo.png"
         alt="Dayson Avrupa Group"
         style={{ height, width: "auto", display: loaded ? "block" : "none" }}
-        className={cn("block", className)}
+        className={cn("block rounded-md bg-white p-1", className)}
         onLoad={() => setLoaded(true)}
         onError={() => setLoaded(false)}
       />

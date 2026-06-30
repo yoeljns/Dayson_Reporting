@@ -43,7 +43,7 @@ export function AppNav({
       {/* Top bar (desktop + mobile header) */}
       <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b bg-background px-4">
         <Link href="/" className="flex items-center">
-          <Logo height={28} />
+          <Logo height={34} />
         </Link>
         <div className="flex items-center gap-3">
           <Link
