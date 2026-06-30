@@ -30,7 +30,7 @@ export function Logo({
       />
       {!loaded && (
         <span className={cn("font-serif text-lg font-semibold", className)}>
-          Dayson <span className="text-primary">Avrupa</span>
+          Avrupa <span className="text-primary">Group</span>
         </span>
       )}
     </span>
