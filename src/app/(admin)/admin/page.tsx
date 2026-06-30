@@ -22,7 +22,7 @@ export default async function AdminHome() {
     await Promise.all([
       count("complaints", (q) => q.in("status", ["acik", "islemde"])),
       count("visits", (q) =>
-        q.eq("status", "tamamlandi").eq("visit_date", today)
+        q.eq("status", "tamamlandi").eq("visit_date", today).is("deleted_at", null)
       ),
       count("companies", (q) => q.eq("kind", "distributor")),
       count("competitor_observations"),

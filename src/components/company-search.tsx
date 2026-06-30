@@ -33,6 +33,7 @@ export function CompanySearch({
         .from("companies")
         .select("id, name, kind, city, segment, logo_code")
         .eq("kind", kind)
+        .is("deleted_at", null)
         .order("name")
         .limit(25);
       if (term.trim()) query = query.ilike("name", `%${term.trim()}%`);

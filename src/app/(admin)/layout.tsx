@@ -7,6 +7,7 @@ const adminLinks = [
   { href: "/admin", label: "Özet", adminOnly: false },
   { href: "/admin/sikayetler", label: "Şikayet Kuyruğu", adminOnly: false },
   { href: "/admin/rakip-haritasi", label: "Rakip Haritası", adminOnly: false },
+  { href: "/admin/silinen-ziyaretler", label: "Silinenler", adminOnly: false },
   { href: "/admin/import", label: "Excel İçe Aktar", adminOnly: true },
   { href: "/admin/bayiler", label: "Bayiler", adminOnly: true },
   { href: "/admin/kullanicilar", label: "Kullanıcılar", adminOnly: true },

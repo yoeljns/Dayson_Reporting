@@ -27,6 +27,7 @@ export default async function VisitsListPage({
   let query = supabase
     .from("visits")
     .select("id, visit_type, status, visit_date, companies(name)")
+    .is("deleted_at", null)
     .order("visit_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(100);

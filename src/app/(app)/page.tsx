@@ -18,13 +18,15 @@ export default async function HomePage() {
         .from("visits")
         .select("id, visit_type, visit_date, created_at, companies(name, kind)")
         .eq("status", "taslak")
+        .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
         .from("visits")
         .select("id", { count: "exact", head: true })
         .eq("status", "tamamlandi")
-        .eq("visit_date", today),
+        .eq("visit_date", today)
+        .is("deleted_at", null),
       supabase
         .from("complaints")
         .select("id", { count: "exact", head: true })

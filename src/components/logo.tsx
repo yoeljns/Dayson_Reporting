@@ -4,8 +4,9 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Brand logo. Renders /logo.png (or /logo.svg) when present; falls back to a
- * styled wordmark until the real asset is added to /public.
+ * Brand logo. Shows a clean wordmark by default and swaps to /logo.png ONLY
+ * once that file actually loads — so a missing logo never shows a broken image.
+ * Drop the real logo at public/logo.png to use it.
  */
 export function Logo({
   className,
@@ -14,24 +15,24 @@ export function Logo({
   className?: string;
   height?: number;
 }) {
-  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  if (!failed) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
+  return (
+    <span className="inline-flex items-center">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/logo.png"
         alt="Dayson Avrupa Group"
-        style={{ height, width: "auto" }}
+        style={{ height, width: "auto", display: loaded ? "block" : "none" }}
         className={cn("block", className)}
-        onError={() => setFailed(true)}
+        onLoad={() => setLoaded(true)}
+        onError={() => setLoaded(false)}
       />
-    );
-  }
-
-  return (
-    <span className={cn("font-serif text-lg font-semibold", className)}>
-      Dayson <span className="text-primary">Avrupa</span>
+      {!loaded && (
+        <span className={cn("font-serif text-lg font-semibold", className)}>
+          Dayson <span className="text-primary">Avrupa</span>
+        </span>
+      )}
     </span>
   );
 }

@@ -12,6 +12,7 @@ export default async function DealersPage() {
         .from("companies")
         .select("id, name, logo_code, segment, debt_status, city")
         .eq("kind", "distributor")
+        .is("deleted_at", null)
         .order("name")
         .limit(2000),
       admin.from("assignments").select("company_id, salesperson_id"),

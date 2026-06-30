@@ -2,12 +2,14 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DEBT_STATUS_LABELS, type DebtStatus } from "@/lib/enums";
-import { assignDealer } from "@/app/(admin)/admin/bayiler/actions";
+import { assignDealer, deleteCompany } from "@/app/(admin)/admin/bayiler/actions";
 
 type Dealer = {
   id: string;
@@ -52,6 +54,23 @@ export function DealerManager({
     });
   }
 
+  function remove(companyId: string, name: string) {
+    if (
+      !window.confirm(
+        `"${name}" silinsin mi? Geçmiş ziyaret/şikayet kayıtları olan firmalar arşivlenir (kayıtlar korunur).`
+      )
+    )
+      return;
+    startTransition(async () => {
+      const res = await deleteCompany({ companyId });
+      if (res.error) {
+        alert(res.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   return (
     <div className="space-y-4">
       <Input
@@ -83,19 +102,32 @@ export function DealerManager({
                   {[d.logo_code, d.city].filter(Boolean).join(" · ") || "—"}
                 </div>
               </div>
-              <Select
-                value={d.assignedTo ?? ""}
-                onChange={(e) => reassign(d.id, e.target.value)}
-                disabled={pending}
-                className="h-9 w-auto"
-              >
-                <option value="">— Atanmamış —</option>
-                {salespeople.map((sp) => (
-                  <option key={sp.id} value={sp.id}>
-                    {sp.full_name}
-                  </option>
-                ))}
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select
+                  value={d.assignedTo ?? ""}
+                  onChange={(e) => reassign(d.id, e.target.value)}
+                  disabled={pending}
+                  className="h-9 w-auto"
+                >
+                  <option value="">— Atanmamış —</option>
+                  {salespeople.map((sp) => (
+                    <option key={sp.id} value={sp.id}>
+                      {sp.full_name}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive"
+                  disabled={pending}
+                  onClick={() => remove(d.id, d.name)}
+                  title="Sil"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </CardContent>
           </Card>
         ))}

@@ -23,3 +23,33 @@ export async function assignDealer(input: {
   revalidatePath("/admin/bayiler");
   return { ok: true };
 }
+
+/**
+ * Delete a company. Hard-deletes when it has no linked records; otherwise
+ * archives it (soft delete) so existing visits/complaints stay intact.
+ */
+export async function deleteCompany(input: {
+  companyId: string;
+}): Promise<{ ok?: boolean; archived?: boolean; error?: string }> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { error } = await admin
+    .from("companies")
+    .delete()
+    .eq("id", input.companyId);
+
+  if (error) {
+    // Has linked records (FK) → archive instead of failing.
+    const { error: archiveErr } = await admin
+      .from("companies")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", input.companyId);
+    if (archiveErr) return { error: archiveErr.message };
+    revalidatePath("/admin/bayiler");
+    return { ok: true, archived: true };
+  }
+
+  revalidatePath("/admin/bayiler");
+  return { ok: true };
+}

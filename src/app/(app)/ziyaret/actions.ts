@@ -62,6 +62,27 @@ export async function createDraftVisit(input: {
   return { id: data.id };
 }
 
+/** Soft-delete a visit (archive). Kept on record + visible to managers. */
+export async function deleteVisit(
+  visitId: string
+): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+
+  const { error } = await supabase
+    .from("visits")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
+    .eq("id", visitId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/ziyaretler");
+  return { ok: true };
+}
+
 /** Persist answers + optionally mark the visit completed. */
 export async function saveVisit(input: {
   visitId: string;

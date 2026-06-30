@@ -99,6 +99,7 @@ export async function POST(request: Request) {
       debt_status: r.borc_durumu ?? null,
       city: r.sehir ?? null,
       phone: r.telefon ?? null,
+      deleted_at: null, // re-importing restores an archived dealer
       updated_at: new Date().toISOString(),
     };
 
