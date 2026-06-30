@@ -1,15 +1,12 @@
 // Dayson Raporlama — service worker.
-// Strategy: network-first for navigations (with offline fallback), and a
-// cache-first runtime cache for static assets so the PWA opens offline.
+// Network-first so deploys are never masked by stale cache; cache is only an
+// offline fallback. Only successful same-origin responses are cached.
 
-const CACHE = "dayson-v1";
+const CACHE = "dayson-v2";
 const OFFLINE_URL = "/offline.html";
-const PRECACHE = [OFFLINE_URL, "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE))
-  );
+  event.waitUntil(caches.open(CACHE).then((c) => c.add(OFFLINE_URL)));
   self.skipWaiting();
 });
 
@@ -20,20 +17,17 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
       )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
-  // Never cache Supabase / API calls — they must hit the network.
   const url = new URL(request.url);
-  if (
-    url.pathname.startsWith("/api/") ||
-    url.hostname.endsWith("supabase.co")
-  ) {
+  // Never touch API / Supabase calls.
+  if (url.pathname.startsWith("/api/") || url.hostname.endsWith("supabase.co")) {
     return;
   }
 
@@ -44,16 +38,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: cache-first, then network, then update cache.
+  // Static assets: network-first, cache only successful same-origin responses.
   event.respondWith(
-    caches.match(request).then(
-      (cached) =>
-        cached ||
-        fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
+        if (response.ok && url.origin === self.location.origin) {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
-          return response;
-        })
-    )
+          caches.open(CACHE).then((c) => c.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });
