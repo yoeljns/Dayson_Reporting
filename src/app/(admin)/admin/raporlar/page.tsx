@@ -79,6 +79,7 @@ export default async function ReportsPage({
       <Card>
         <CardContent className="space-y-4 p-4">
           <ReportsControls
+            key={r}
             reportType={r}
             filters={def.filters}
             initial={{

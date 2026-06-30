@@ -175,8 +175,11 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
     }
   }
 
-  // Disambiguate duplicate question labels by appending the code.
+  // Disambiguate question labels that collide with each other OR with a fixed
+  // column header (labels are admin-editable) by appending the unique code.
+  const fixed = ["Tarih", "Firma", "Şehir", "Tür", "Pazarlamacı", "Durum"];
   const labelCount = new Map<string, number>();
+  for (const fx of fixed) labelCount.set(fx, (labelCount.get(fx) ?? 0) + 1);
   for (const ques of questions)
     labelCount.set(ques.label_tr, (labelCount.get(ques.label_tr) ?? 0) + 1);
   const headerFor = (ques: QuestionRow) =>
@@ -184,7 +187,6 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
       ? `${ques.label_tr} (${ques.code})`
       : ques.label_tr;
 
-  const fixed = ["Tarih", "Firma", "Şehir", "Tür", "Pazarlamacı", "Durum"];
   const headers = [...fixed, ...questions.map(headerFor)];
 
   const rows: SheetRow[] = visits.map((v) => {
@@ -229,27 +231,39 @@ export const buildPerformans: ReportBuilder = async (supabase, f, opts) => {
         .is("deleted_at", null)
         .gte("visit_date", start)
         .lte("visit_date", end)
-        .limit(ROW_CAP),
+        .order("visit_date", { ascending: false })
+        .limit(ROW_CAP + 1),
       supabase
         .from("complaints")
         .select("reported_by, created_at")
         .gte("created_at", start)
         .lt("created_at", endNext)
-        .limit(ROW_CAP),
+        .order("created_at", { ascending: false })
+        .limit(ROW_CAP + 1),
       supabase
         .from("competitor_observations")
         .select("salesperson_id, observed_at")
         .gte("observed_at", start)
         .lte("observed_at", end)
-        .limit(ROW_CAP),
+        .order("observed_at", { ascending: false })
+        .limit(ROW_CAP + 1),
       supabase
         .from("visit_plans")
         .select("salesperson_id, submitted_at")
         .eq("status", "gonderildi")
         .gte("submitted_at", start)
         .lt("submitted_at", endNext)
-        .limit(ROW_CAP),
+        .order("submitted_at", { ascending: false })
+        .limit(ROW_CAP + 1),
     ]);
+
+  // If any source hit the cap the per-rep aggregates are partial — flag it so
+  // the export appends a "Bilgi" warning sheet.
+  const capped =
+    (visits?.length ?? 0) > ROW_CAP ||
+    (comps?.length ?? 0) > ROW_CAP ||
+    (obs?.length ?? 0) > ROW_CAP ||
+    (plans?.length ?? 0) > ROW_CAP;
 
   type Agg = {
     name: string;
@@ -275,30 +289,39 @@ export const buildPerformans: ReportBuilder = async (supabase, f, opts) => {
     if (d && (!r.last || d > r.last)) r.last = d;
   };
 
-  for (const v of (visits ?? []) as {
+  for (const v of ((visits ?? []) as {
     salesperson_id: string;
     status: string;
     visit_date: string;
-  }[]) {
+  }[]).slice(0, ROW_CAP)) {
     const r = map.get(v.salesperson_id);
     if (!r) continue;
     if (v.status === "tamamlandi") r.done++;
     else r.draft++;
     touch(r, v.visit_date);
   }
-  for (const c of (comps ?? []) as { reported_by: string; created_at: string }[]) {
+  for (const c of ((comps ?? []) as { reported_by: string; created_at: string }[]).slice(
+    0,
+    ROW_CAP
+  )) {
     const r = map.get(c.reported_by);
     if (!r) continue;
     r.complaints++;
     touch(r, c.created_at?.slice(0, 10) ?? null);
   }
-  for (const o of (obs ?? []) as { salesperson_id: string; observed_at: string }[]) {
+  for (const o of ((obs ?? []) as {
+    salesperson_id: string;
+    observed_at: string;
+  }[]).slice(0, ROW_CAP)) {
     const r = map.get(o.salesperson_id);
     if (!r) continue;
     r.obs++;
     touch(r, o.observed_at);
   }
-  for (const p of (plans ?? []) as { salesperson_id: string; submitted_at: string }[]) {
+  for (const p of ((plans ?? []) as {
+    salesperson_id: string;
+    submitted_at: string;
+  }[]).slice(0, ROW_CAP)) {
     const r = map.get(p.salesperson_id);
     if (!r) continue;
     r.plans++;
@@ -326,7 +349,7 @@ export const buildPerformans: ReportBuilder = async (supabase, f, opts) => {
       "Son Aktivite": r.last ? formatTRDate(r.last) : null,
     }));
   if (opts?.limit) rows = rows.slice(0, opts.limit);
-  return { sheetName: "Performans", headers, rows };
+  return { sheetName: "Performans", headers, rows, capped };
 };
 
 // ---------------------------------------------------------------------------
@@ -464,15 +487,20 @@ export const buildRakip: ReportBuilder = async (supabase, f, opts) => {
 // 5) Bayi Kapsama / Son Ziyaret — snapshot
 // ---------------------------------------------------------------------------
 export const buildKapsama: ReportBuilder = async (supabase, f, opts) => {
+  // Push the segment filter into the query so the row cap applies to the
+  // filtered population, not the first N dealers alphabetically.
+  let companiesQ = supabase
+    .from("companies")
+    .select("id, name, city, segment, debt_status")
+    .eq("kind", "distributor")
+    .is("deleted_at", null);
+  if (f.segment && (SEGMENTS as readonly string[]).includes(f.segment))
+    companiesQ = companiesQ.eq("segment", f.segment);
+  companiesQ = companiesQ.order("name").limit(COVERAGE_CAP + 1);
+
   const [{ data: companies }, { data: assignments }, { data: profiles }, { data: lv }] =
     await Promise.all([
-      supabase
-        .from("companies")
-        .select("id, name, city, segment, debt_status")
-        .eq("kind", "distributor")
-        .is("deleted_at", null)
-        .order("name")
-        .limit(COVERAGE_CAP + 1),
+      companiesQ,
       supabase.from("assignments").select("company_id, salesperson_id"),
       supabase.from("profiles").select("id, full_name"),
       supabase
@@ -493,12 +521,16 @@ export const buildKapsama: ReportBuilder = async (supabase, f, opts) => {
   const spName = new Map(
     (profiles ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name])
   );
-  const assignedTo = new Map(
-    (assignments ?? []).map((a: { company_id: string; salesperson_id: string }) => [
-      a.company_id,
-      a.salesperson_id,
-    ])
-  );
+  // A company can have several salespeople (assignments unique is composite).
+  const assignedTo = new Map<string, string[]>();
+  for (const a of (assignments ?? []) as {
+    company_id: string;
+    salesperson_id: string;
+  }[]) {
+    const arr = assignedTo.get(a.company_id) ?? [];
+    arr.push(a.salesperson_id);
+    assignedTo.set(a.company_id, arr);
+  }
   const lastMap = new Map(
     (lv ?? []).map(
       (r: { company_id: string; last_visit_date: string | null; visit_count: number }) => [
@@ -508,9 +540,7 @@ export const buildKapsama: ReportBuilder = async (supabase, f, opts) => {
     )
   );
 
-  if (f.segment && (SEGMENTS as readonly string[]).includes(f.segment))
-    comps = comps.filter((c) => c.segment === f.segment);
-  if (f.sp) comps = comps.filter((c) => assignedTo.get(c.id) === f.sp);
+  if (f.sp) comps = comps.filter((c) => (assignedTo.get(c.id) ?? []).includes(f.sp!));
 
   const enriched = comps.map((c) => ({
     c,
@@ -537,7 +567,10 @@ export const buildKapsama: ReportBuilder = async (supabase, f, opts) => {
     "Hiç Ziyaret Edilmedi",
   ];
   let rows: SheetRow[] = enriched.map(({ c, last, count }) => {
-    const spId = assignedTo.get(c.id);
+    const reps = (assignedTo.get(c.id) ?? [])
+      .map((id) => spName.get(id))
+      .filter(Boolean)
+      .join(", ");
     return {
       Bayi: c.name,
       Şehir: c.city ?? "",
@@ -545,7 +578,7 @@ export const buildKapsama: ReportBuilder = async (supabase, f, opts) => {
       "Borç Durumu": c.debt_status
         ? DEBT_STATUS_LABELS[c.debt_status as DebtStatus] ?? c.debt_status
         : "",
-      Pazarlamacı: spId ? spName.get(spId) ?? "" : "",
+      Pazarlamacı: reps,
       "Son Ziyaret": last ? formatTRDate(last) : null,
       "Geçen Gün": daysSince(last),
       "Ziyaret Sayısı": count,
@@ -570,7 +603,8 @@ export const buildPlan: ReportBuilder = async (supabase, f, opts) => {
     )
     .gte("week_start", start)
     .lte("week_start", end)
-    .order("week_start", { ascending: false });
+    .order("week_start", { ascending: false })
+    .limit(ROW_CAP);
   if (f.sp) q = q.eq("salesperson_id", f.sp);
 
   const { data } = await q;
@@ -645,6 +679,8 @@ export const buildPlan: ReportBuilder = async (supabase, f, opts) => {
       });
     }
   }
-  const limited = opts?.limit ? rows.slice(0, opts.limit) : rows;
-  return { sheetName: "Haftalık Plan", headers, rows: limited };
+  const max = opts?.limit ?? ROW_CAP;
+  const capped = rows.length > max;
+  const limited = capped ? rows.slice(0, max) : rows;
+  return { sheetName: "Haftalık Plan", headers, rows: limited, capped };
 };

@@ -57,7 +57,7 @@ export async function GET(request: Request) {
         "Bilgi",
         [
           {
-            Bilgi: `Sonuç ${res.rows.length} kayıtla sınırlandı. Lütfen tarih aralığını daraltın.`,
+            Bilgi: `Sonuç ${res.rows.length} kayıtla sınırlandı. Lütfen filtreleri daraltın.`,
           },
         ],
         ["Bilgi"]
