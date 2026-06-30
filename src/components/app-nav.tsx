@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   ClipboardList,
+  CalendarDays,
   AlertTriangle,
   Swords,
   Shield,
@@ -19,6 +20,7 @@ import type { UserRole } from "@/lib/enums";
 const navItems = [
   { href: "/", label: "Ana Sayfa", icon: Home },
   { href: "/ziyaretler", label: "Ziyaretler", icon: ClipboardList },
+  { href: "/plan", label: "Plan", icon: CalendarDays },
   { href: "/sikayetler", label: "Şikayetler", icon: AlertTriangle },
   { href: "/rakip/yeni", label: "Rakip", icon: Swords },
 ];

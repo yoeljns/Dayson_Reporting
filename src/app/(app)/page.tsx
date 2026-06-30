@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, FileEdit, AlertTriangle } from "lucide-react";
+import { Plus, FileEdit, AlertTriangle, CalendarDays, History } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,25 @@ export default async function HomePage() {
           Yeni Ziyaret
         </Button>
       </Link>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Link href="/plan">
+          <Card className="h-full transition-colors hover:bg-accent">
+            <CardContent className="flex flex-col items-center gap-1 p-4 text-center">
+              <CalendarDays className="h-6 w-6 text-primary" />
+              <span className="text-sm font-medium">Haftalık Plan</span>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/son-ziyaretler">
+          <Card className="h-full transition-colors hover:bg-accent">
+            <CardContent className="flex flex-col items-center gap-1 p-4 text-center">
+              <History className="h-6 w-6 text-primary" />
+              <span className="text-sm font-medium">Son Ziyaretler</span>
+            </CardContent>
+          </Card>
+        </Link>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Link href="/sikayet/yeni">

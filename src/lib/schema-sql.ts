@@ -559,4 +559,85 @@ alter table visits add column if not exists deleted_at timestamptz;
 alter table visits add column if not exists deleted_by uuid references profiles(id);
 
 alter table companies add column if not exists deleted_at timestamptz;
+
+-- ============================================================================
+-- Weekly visit plans (haftalık ziyaret planı) + last-visit reporting view.
+-- A salesperson plans the companies to visit in a given week, then submits it;
+-- following weeks can be planned independently. company_last_visit feeds the
+-- "son ziyaret tarihi" screens (security_invoker => caller's RLS applies).
+-- Idempotent — applied on every boot by the runtime bootstrap.
+-- ============================================================================
+
+do $$ begin
+  create type plan_status as enum ('taslak','gonderildi');
+exception when duplicate_object then null; end $$;
+
+create table if not exists visit_plans (
+  id             uuid primary key default gen_random_uuid(),
+  salesperson_id uuid not null references profiles(id) on delete cascade,
+  week_start     date not null,
+  status         plan_status not null default 'taslak',
+  note           text,
+  submitted_at   timestamptz,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  unique (salesperson_id, week_start)
+);
+create index if not exists idx_visit_plans_sp on visit_plans(salesperson_id, week_start);
+
+create table if not exists visit_plan_items (
+  id           uuid primary key default gen_random_uuid(),
+  plan_id      uuid not null references visit_plans(id) on delete cascade,
+  company_id   uuid not null references companies(id),
+  planned_date date,
+  visit_type   visit_type,
+  note         text,
+  created_at   timestamptz not null default now(),
+  unique (plan_id, company_id)
+);
+create index if not exists idx_visit_plan_items_plan on visit_plan_items(plan_id);
+
+alter table visit_plans      enable row level security;
+alter table visit_plan_items enable row level security;
+
+drop policy if exists visit_plans_select on visit_plans;
+create policy visit_plans_select on visit_plans for select
+  using (salesperson_id = auth.uid() or is_manager());
+drop policy if exists visit_plans_insert on visit_plans;
+create policy visit_plans_insert on visit_plans for insert
+  with check (salesperson_id = auth.uid());
+drop policy if exists visit_plans_update_own on visit_plans;
+create policy visit_plans_update_own on visit_plans for update
+  using (salesperson_id = auth.uid()) with check (salesperson_id = auth.uid());
+drop policy if exists visit_plans_delete_own on visit_plans;
+create policy visit_plans_delete_own on visit_plans for delete
+  using (salesperson_id = auth.uid());
+
+drop policy if exists vplan_items_select on visit_plan_items;
+create policy vplan_items_select on visit_plan_items for select
+  using (exists (
+    select 1 from visit_plans p
+    where p.id = visit_plan_items.plan_id
+      and (p.salesperson_id = auth.uid() or is_manager())
+  ));
+drop policy if exists vplan_items_write on visit_plan_items;
+create policy vplan_items_write on visit_plan_items for all
+  using (exists (
+    select 1 from visit_plans p
+    where p.id = visit_plan_items.plan_id and p.salesperson_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from visit_plans p
+    where p.id = visit_plan_items.plan_id and p.salesperson_id = auth.uid()
+  ));
+
+create or replace view company_last_visit
+with (security_invoker = on) as
+  select company_id,
+         max(visit_date) as last_visit_date,
+         count(*)        as visit_count
+    from visits
+   where status = 'tamamlandi'
+     and deleted_at is null
+   group by company_id;
 `;

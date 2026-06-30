@@ -13,6 +13,7 @@ import type {
   ComplaintStatus,
   ComplaintOwnerDept,
   ImportStatus,
+  PlanStatus,
 } from "@/lib/enums";
 
 export interface Profile {
@@ -100,6 +101,27 @@ export interface VisitAnswer {
   value_text: string | null;
   value_number: number | null;
   value_date: string | null;
+}
+
+export interface VisitPlan {
+  id: string;
+  salesperson_id: string;
+  week_start: string;
+  status: PlanStatus;
+  note: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VisitPlanItem {
+  id: string;
+  plan_id: string;
+  company_id: string;
+  planned_date: string | null;
+  visit_type: VisitType | null;
+  note: string | null;
+  created_at: string;
 }
 
 export interface Complaint {

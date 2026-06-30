@@ -1,0 +1,66 @@
+import { startOfWeek, addWeeks, addDays, format, parseISO, differenceInCalendarDays } from "date-fns";
+
+/**
+ * Week helpers for the visit-planning UI. Weeks are Monday-anchored (ISO) and
+ * passed around as `YYYY-MM-DD` strings (the Monday). Display strings are
+ * formatted in Turkish without pulling a locale package.
+ */
+
+const ISO_FMT = "yyyy-MM-dd";
+
+const TR_MONTHS = [
+  "Oca", "Şub", "Mar", "Nis", "May", "Haz",
+  "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara",
+];
+const TR_DAYS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]; // Mon..Sun
+
+/** Monday (ISO week start) of the week containing `date`, as YYYY-MM-DD. */
+export function weekStartOf(date: Date = new Date()): string {
+  return format(startOfWeek(date, { weekStartsOn: 1 }), ISO_FMT);
+}
+
+/** Shift a YYYY-MM-DD week-start by `n` weeks (negative = past). */
+export function shiftWeek(weekStart: string, n: number): string {
+  return format(addWeeks(parseISO(weekStart), n), ISO_FMT);
+}
+
+/** Sunday (end) of the week for a YYYY-MM-DD Monday. */
+export function weekEndOf(weekStart: string): string {
+  return format(addDays(parseISO(weekStart), 6), ISO_FMT);
+}
+
+/** Short Turkish date, e.g. "30 Haz". */
+export function formatTRShort(iso: string): string {
+  const d = parseISO(iso);
+  return `${d.getDate()} ${TR_MONTHS[d.getMonth()]}`;
+}
+
+/** Full Turkish date, e.g. "30 Haz 2025". */
+export function formatTRDate(iso: string): string {
+  const d = parseISO(iso);
+  return `${d.getDate()} ${TR_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** Human week range, e.g. "30 Haz – 6 Tem 2025". */
+export function weekRangeLabel(weekStart: string): string {
+  const end = weekEndOf(weekStart);
+  return `${formatTRShort(weekStart)} – ${formatTRDate(end)}`;
+}
+
+/** The seven days of a week as { iso, label } (Mon..Sun) for a day picker. */
+export function weekDayOptions(weekStart: string): { iso: string; label: string }[] {
+  const monday = parseISO(weekStart);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(monday, i);
+    return {
+      iso: format(d, ISO_FMT),
+      label: `${TR_DAYS[i]} ${d.getDate()} ${TR_MONTHS[d.getMonth()]}`,
+    };
+  });
+}
+
+/** Whole days from `iso` until today (positive = in the past). null if no date. */
+export function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  return differenceInCalendarDays(new Date(), parseISO(iso));
+}

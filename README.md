@@ -12,6 +12,11 @@ seçmeli/enum olduğu için veriler sonradan analiz edilebilir.
 - **Şikayet = iş emri** — sahibi (departman) ve durumu (açık → işlemde → çözüldü)
   olan, her adımı not'la belgelenen bir akış. Geçişler veritabanı RPC'si ile
   doğrulanır.
+- **Haftalık ziyaret planı** — pazarlamacı haftalık ziyaret planını oluşturup
+  gönderir; ilerideki haftalar için de plan yapabilir. Yönetici gönderilen
+  planları görür.
+- **Son ziyaret tarihleri** — pazarlamacı kendi müşterilerinin, yönetici tüm
+  bayilerin en son ne zaman ziyaret edildiğini (en eskiler üstte) görür.
 - **Rakip istihbaratı** — fiyat/ürün gözlemleri; pazarlamacı kendi girdiğini,
   yönetici toplu fiyat haritasını görür.
 - **Rol bazlı erişim** — pazarlamacı yalnız kendine atanan bayileri, yönetici

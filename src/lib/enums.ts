@@ -106,6 +106,13 @@ export const COMPLAINT_PRIORITY_LABELS: Record<number, string> = {
   3: "Düşük",
 };
 
+export const PLAN_STATUSES = ["taslak", "gonderildi"] as const;
+export type PlanStatus = (typeof PLAN_STATUSES)[number];
+export const PLAN_STATUS_LABELS: Record<PlanStatus, string> = {
+  taslak: "Taslak",
+  gonderildi: "Gönderildi",
+};
+
 export const IMPORT_STATUSES = ["basarili", "kismi", "hata"] as const;
 export type ImportStatus = (typeof IMPORT_STATUSES)[number];
 export const IMPORT_STATUS_LABELS: Record<ImportStatus, string> = {
