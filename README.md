@@ -16,7 +16,10 @@ seçmeli/enum olduğu için veriler sonradan analiz edilebilir.
   gönderir; ilerideki haftalar için de plan yapabilir. Yönetici gönderilen
   planları görür.
 - **Son ziyaret tarihleri** — pazarlamacı kendi müşterilerinin, yönetici tüm
-  bayilerin en son ne zaman ziyaret edildiğini (en eskiler üstte) görür.
+  bayilerin en son ne zaman ziyaret edildiğini (en eskiler üstte) görür. Bir
+  firmaya dokununca o firmanın ziyaret geçmişine inilir.
+- **Ziyaret geçmişi (yönetici)** — yönetici tüm ekibin ziyaret geçmişini
+  pazarlamacıya / firmaya / duruma göre filtreleyerek görür.
 - **Rakip istihbaratı** — fiyat/ürün gözlemleri; pazarlamacı kendi girdiğini,
   yönetici toplu fiyat haritasını görür.
 - **Rol bazlı erişim** — pazarlamacı yalnız kendine atanan bayileri, yönetici

@@ -55,7 +55,7 @@ export default async function ManagerLastVisitsPage() {
           üstte — pazarlamacıya göre filtrelemek için arama kutusunu kullan.
         </p>
       </div>
-      <LastVisitTable rows={rows} showSalesperson />
+      <LastVisitTable rows={rows} showSalesperson linkBase="/admin/ziyaretler" />
     </div>
   );
 }

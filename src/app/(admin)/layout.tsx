@@ -5,6 +5,7 @@ import { ensureSchema } from "@/lib/bootstrap";
 
 const adminLinks = [
   { href: "/admin", label: "Özet", adminOnly: false },
+  { href: "/admin/ziyaretler", label: "Ziyaret Geçmişi", adminOnly: false },
   { href: "/admin/planlar", label: "Haftalık Planlar", adminOnly: false },
   { href: "/admin/son-ziyaretler", label: "Son Ziyaretler", adminOnly: false },
   { href: "/admin/sikayetler", label: "Şikayet Kuyruğu", adminOnly: false },

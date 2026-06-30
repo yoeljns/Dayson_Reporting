@@ -30,7 +30,11 @@ export default async function AdminHome() {
 
   const stats = [
     { label: "Açık şikayet", value: openComplaints, href: "/admin/sikayetler" },
-    { label: "Bugün tamamlanan ziyaret", value: todayVisits, href: "#" },
+    {
+      label: "Bugün tamamlanan ziyaret",
+      value: todayVisits,
+      href: "/admin/ziyaretler?status=tamamlandi",
+    },
     { label: "Toplam bayi", value: totalDealers, href: "/admin/bayiler" },
     {
       label: "Rakip gözlemi",

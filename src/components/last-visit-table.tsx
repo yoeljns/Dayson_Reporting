@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ArrowDownUp, Building2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -23,9 +24,12 @@ type Sort = "stale" | "name";
 export function LastVisitTable({
   rows,
   showSalesperson = false,
+  linkBase,
 }: {
   rows: LastVisitRow[];
   showSalesperson?: boolean;
+  /** When set, each row links to `${linkBase}?company=<id>` (visit history). */
+  linkBase?: string;
 }) {
   const [term, setTerm] = useState("");
   const [sort, setSort] = useState<Sort>("stale");
@@ -85,8 +89,11 @@ export function LastVisitTable({
         ) : (
           filtered.map((r) => {
             const days = daysSince(r.lastVisit);
-            return (
-              <Card key={r.companyId}>
+            const card = (
+              <Card
+                key={r.companyId}
+                className={linkBase ? "transition-colors hover:bg-accent" : undefined}
+              >
                 <CardContent className="flex items-center justify-between gap-2 p-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 font-medium">
@@ -122,6 +129,17 @@ export function LastVisitTable({
                   </div>
                 </CardContent>
               </Card>
+            );
+            return linkBase ? (
+              <Link
+                key={r.companyId}
+                href={`${linkBase}?company=${encodeURIComponent(r.companyId)}`}
+                className="block"
+              >
+                {card}
+              </Link>
+            ) : (
+              card
             );
           })
         )}

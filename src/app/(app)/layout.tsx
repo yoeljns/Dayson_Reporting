@@ -1,6 +1,7 @@
 import { requireProfile } from "@/lib/auth";
 import { AppNav } from "@/components/app-nav";
 import { OfflineSync } from "@/components/offline-sync";
+import { ensureSchema } from "@/lib/bootstrap";
 
 export default async function AppLayout({
   children,
@@ -8,6 +9,9 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const profile = await requireProfile();
+  // Apply any pending idempotent schema patches (memoized per process) so new
+  // tables (e.g. visit plans) exist even for salespeople who never hit /admin.
+  await ensureSchema().catch(() => {});
 
   return (
     <div className="min-h-screen pb-16 sm:pb-0">

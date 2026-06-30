@@ -73,7 +73,7 @@ export default async function MyLastVisitsPage() {
           Sana atanmış bayi yok.
         </p>
       ) : (
-        <LastVisitTable rows={rows} />
+        <LastVisitTable rows={rows} linkBase="/ziyaretler" />
       )}
     </div>
   );

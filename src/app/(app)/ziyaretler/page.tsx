@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 export default async function VisitsListPage({
   searchParams,
 }: {
-  searchParams: { status?: string };
+  searchParams: { status?: string; company?: string };
 }) {
   await requireProfile();
   const supabase = createClient();
@@ -23,6 +23,7 @@ export default async function VisitsListPage({
   )
     ? (searchParams.status as VisitStatus)
     : undefined;
+  const companyFilter = searchParams.company;
 
   let query = supabase
     .from("visits")
@@ -32,8 +33,20 @@ export default async function VisitsListPage({
     .order("created_at", { ascending: false })
     .limit(100);
   if (statusFilter) query = query.eq("status", statusFilter);
+  if (companyFilter) query = query.eq("company_id", companyFilter);
 
   const { data: visits } = await query;
+
+  // Header for a company-scoped history view.
+  let companyName: string | null = null;
+  if (companyFilter) {
+    const { data: c } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", companyFilter)
+      .maybeSingle();
+    companyName = (c as { name: string } | null)?.name ?? null;
+  }
 
   const filters: Array<{ key?: VisitStatus; label: string }> = [
     { label: "Tümü" },
@@ -41,15 +54,34 @@ export default async function VisitsListPage({
     { key: "tamamlandi", label: "Tamamlandı" },
   ];
 
+  const companyQs = companyFilter
+    ? `&company=${encodeURIComponent(companyFilter)}`
+    : "";
+
   return (
     <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-lg font-semibold">Ziyaretlerim</h1>
+      <h1 className="text-lg font-semibold">
+        {companyName ? `${companyName} — Ziyaretler` : "Ziyaretlerim"}
+      </h1>
+
+      {companyFilter && (
+        <Link
+          href="/ziyaretler"
+          className="inline-block text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Tüm ziyaretler
+        </Link>
+      )}
 
       <div className="flex gap-2">
         {filters.map((f) => (
           <Link
             key={f.label}
-            href={f.key ? `/ziyaretler?status=${f.key}` : "/ziyaretler"}
+            href={
+              f.key
+                ? `/ziyaretler?status=${f.key}${companyQs}`
+                : `/ziyaretler${companyFilter ? `?company=${encodeURIComponent(companyFilter)}` : ""}`
+            }
             className={cn(
               "rounded-full border px-3 py-1 text-sm",
               (f.key ?? undefined) === statusFilter
