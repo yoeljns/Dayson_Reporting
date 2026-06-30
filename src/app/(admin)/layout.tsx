@@ -8,6 +8,7 @@ const adminLinks = [
   { href: "/admin/ziyaretler", label: "Ziyaret Geçmişi", adminOnly: false },
   { href: "/admin/planlar", label: "Haftalık Planlar", adminOnly: false },
   { href: "/admin/son-ziyaretler", label: "Son Ziyaretler", adminOnly: false },
+  { href: "/admin/raporlar", label: "Raporlar", adminOnly: false },
   { href: "/admin/sikayetler", label: "Şikayet Kuyruğu", adminOnly: false },
   { href: "/admin/rakip-haritasi", label: "Rakip Haritası", adminOnly: false },
   { href: "/admin/silinen-ziyaretler", label: "Silinenler", adminOnly: false },
