@@ -8,7 +8,8 @@ import { setupNeeded } from "@/app/(auth)/setup/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Logo } from "@/components/logo";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -45,9 +46,9 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-center text-xl">
-            Dayson Raporlama
-          </CardTitle>
+          <div className="flex justify-center py-1">
+            <Logo height={40} />
+          </div>
           <p className="text-center text-sm text-muted-foreground">
             Pazarlama saha raporlama sistemi
           </p>

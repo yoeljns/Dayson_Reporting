@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/app/(auth)/login/actions";
+import { Logo } from "@/components/logo";
 import type { UserRole } from "@/lib/enums";
 
 const navItems = [
@@ -41,8 +42,8 @@ export function AppNav({
     <>
       {/* Top bar (desktop + mobile header) */}
       <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b bg-background px-4">
-        <Link href="/" className="font-serif text-lg font-semibold">
-          Dayson Raporlama
+        <Link href="/" className="flex items-center">
+          <Logo height={28} />
         </Link>
         <div className="flex items-center gap-3">
           <Link
