@@ -15,10 +15,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#2563eb",
+  themeColor: "#EFE9E0",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // Required for env(safe-area-inset-*) to be non-zero on iOS, so the bottom
+  // nav clears the home indicator in the installed (standalone) PWA.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
