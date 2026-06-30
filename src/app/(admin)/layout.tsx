@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireManager } from "@/lib/auth";
 import { AppNav } from "@/components/app-nav";
+import { ensureSchema } from "@/lib/bootstrap";
 
 const adminLinks = [
   { href: "/admin", label: "Özet", adminOnly: false },
@@ -18,6 +19,8 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const profile = await requireManager();
+  // Apply any pending idempotent schema patches (cheap; memoized per process).
+  await ensureSchema().catch(() => {});
   const isAdmin = profile.role === "admin";
   const links = adminLinks.filter((l) => !l.adminOnly || isAdmin);
 

@@ -1,26 +1,35 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 221.2 83.2% 53.3%;
-  --radius: 0.6rem;
+  /* Dayson saha — warm cream + ink + brand red + gold accents */
+  --background: 36 32% 91%;
+  --foreground: 40 11% 11%;
+  --card: 37 44% 96.5%;
+  --card-foreground: 40 11% 11%;
+  --primary: 1.6 63% 48%;
+  --primary-foreground: 40 65% 95.5%;
+  --secondary: 39 29% 86%;
+  --secondary-foreground: 40 11% 11%;
+  --muted: 39 29% 86%;
+  --muted-foreground: 42 9% 44%;
+  --accent: 39 29% 86%;
+  --accent-foreground: 40 11% 11%;
+  --destructive: 2.6 69% 39%;
+  --destructive-foreground: 40 65% 95.5%;
+  --border: 39 29% 86%;
+  --input: 37 28% 83%;
+  --ring: 1.6 63% 48%;
+  --radius: 0.85rem;
+
+  /* Brand accents (used via utility classes) */
+  --gold: 41 71% 31%;
+  --gold-soft: 43 83% 92%;
+  --success: 96 35% 26%;
+  --success-soft: 96 22% 89%;
 }
 
 * {
@@ -30,7 +39,30 @@
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Headings use the Fraunces serif for the editorial Dayson look. */
+h1,
+h2,
+h3,
+.font-serif {
+  font-family: "Fraunces", Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.font-mono {
+  font-family: "JetBrains Mono", monospace;
+}
+
+/* Gold uppercase section label (e.g. "TAMAMLANMAMIŞ RAPORLAR"). */
+.section-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: hsl(var(--gold));
 }
 
 /* Larger tap targets on touch devices for field use */

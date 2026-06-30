@@ -74,8 +74,8 @@ export default async function HomePage() {
 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FileEdit className="h-4 w-4" />
+          <CardTitle className="section-label flex items-center gap-2">
+            <FileEdit className="h-3.5 w-3.5" />
             Tamamlanmamış Ziyaretler
           </CardTitle>
           {drafts && drafts.length > 0 && (
@@ -96,7 +96,7 @@ export default async function HomePage() {
                 <Link
                   key={d.id}
                   href={`/ziyaret/${d.id}`}
-                  className="flex items-center justify-between rounded-md border p-3 hover:bg-accent"
+                  className="flex items-center justify-between rounded-md border border-l-4 border-l-[hsl(var(--gold))] p-3 hover:bg-accent"
                 >
                   <div>
                     <div className="font-medium">
