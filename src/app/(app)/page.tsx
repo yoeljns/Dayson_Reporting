@@ -20,7 +20,6 @@ export default async function HomePage() {
   const [
     { data: drafts },
     { count: todayCount },
-    { count: openComplaints },
     { data: plans },
     eod,
     planDeadline,
@@ -40,10 +39,6 @@ export default async function HomePage() {
       .eq("salesperson_id", profile.id)
       .eq("visit_date", today)
       .is("deleted_at", null),
-    supabase
-      .from("complaints")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["acik", "islemde"]),
     supabase
       .from("visit_plans")
       .select("week_start, status")
@@ -85,7 +80,7 @@ export default async function HomePage() {
         </p>
       </div>
 
-      {/* Primary actions — stacked launcher */}
+      {/* Primary actions — stacked "new" launcher */}
       <div className="space-y-3">
         <Link href="/ziyaret/yeni" className="block">
           <Button size="lg" className="h-16 w-full justify-start text-lg">
@@ -94,56 +89,27 @@ export default async function HomePage() {
           </Button>
         </Link>
 
-        {/* Şikayetler: section + new */}
-        <div className="flex gap-2">
-          <Link href="/sikayetler" className="block flex-1">
-            <Button
-              size="lg"
-              variant="secondary"
-              className="h-14 w-full justify-start text-base"
-            >
-              <AlertTriangle className="mr-3 h-5 w-5 text-amber-600" />
-              Şikayetler
-              {openComplaints ? (
-                <Badge variant="warning" className="ml-auto">
-                  {openComplaints}
-                </Badge>
-              ) : null}
-            </Button>
-          </Link>
-          <Link href="/sikayet/yeni" className="block">
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-14 whitespace-nowrap"
-            >
-              <Plus className="mr-1 h-5 w-5" /> Yeni
-            </Button>
-          </Link>
-        </div>
+        <Link href="/sikayet/yeni" className="block">
+          <Button
+            size="lg"
+            variant="secondary"
+            className="h-14 w-full justify-start text-base"
+          >
+            <AlertTriangle className="mr-3 h-5 w-5 text-amber-600" />
+            Yeni Şikayet
+          </Button>
+        </Link>
 
-        {/* Rakip Bilgisi: section + new */}
-        <div className="flex gap-2">
-          <Link href="/rakip" className="block flex-1">
-            <Button
-              size="lg"
-              variant="secondary"
-              className="h-14 w-full justify-start text-base"
-            >
-              <Swords className="mr-3 h-5 w-5 text-primary" />
-              Rakip Bilgisi
-            </Button>
-          </Link>
-          <Link href="/rakip/yeni" className="block">
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-14 whitespace-nowrap"
-            >
-              <Plus className="mr-1 h-5 w-5" /> Yeni
-            </Button>
-          </Link>
-        </div>
+        <Link href="/rakip/yeni" className="block">
+          <Button
+            size="lg"
+            variant="secondary"
+            className="h-14 w-full justify-start text-base"
+          >
+            <Swords className="mr-3 h-5 w-5 text-primary" />
+            Yeni Rakip Bilgisi
+          </Button>
+        </Link>
       </div>
 
       <Card>
