@@ -1,4 +1,4 @@
-import { startOfWeek, addWeeks, addDays, format, parseISO, differenceInCalendarDays } from "date-fns";
+import { startOfWeek, addWeeks, addDays, subDays, format, parseISO, differenceInCalendarDays } from "date-fns";
 
 /**
  * Week helpers for the visit-planning UI. Weeks are Monday-anchored (ISO) and
@@ -7,6 +7,28 @@ import { startOfWeek, addWeeks, addDays, format, parseISO, differenceInCalendarD
  */
 
 const ISO_FMT = "yyyy-MM-dd";
+
+/** The team operates in Turkey; anchor "today"/week to this zone, not the
+ *  server's (production runs in UTC, which rolls the date over 3h early). */
+const APP_TZ = "Europe/Istanbul";
+
+/** Current calendar date (YYYY-MM-DD) in the app timezone, regardless of where
+ *  the server runs. `en-CA` formats as YYYY-MM-DD. */
+export function todayIso(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TZ }).format(
+    new Date()
+  );
+}
+
+/** Monday (YYYY-MM-DD) of the current week in the app timezone. */
+export function currentWeekStart(): string {
+  return weekStartOf(parseISO(todayIso()));
+}
+
+/** A calendar date `days` before `fromIso` (default: today in app TZ). */
+export function isoDaysAgo(days: number, fromIso: string = todayIso()): string {
+  return format(subDays(parseISO(fromIso), days), ISO_FMT);
+}
 
 const TR_MONTHS = [
   "Oca", "Şub", "Mar", "Nis", "May", "Haz",

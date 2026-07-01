@@ -4,17 +4,28 @@ import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { weekStartOf, weekEndOf, weekRangeLabel, daysSince } from "@/lib/week";
+import {
+  currentWeekStart,
+  weekEndOf,
+  weekRangeLabel,
+  todayIso,
+  isoDaysAgo,
+} from "@/lib/week";
 
 const STALE_DAYS = 30;
+// Dealer/visit universe for one distributor network — far above any real count,
+// so the coverage tallies below are effectively exact (not silently truncated).
+const DEALER_CAP = 20000;
 
 export default async function ManagerPanelPage() {
   await requireManager();
   const supabase = createClient();
 
-  const today = new Date().toISOString().slice(0, 10);
-  const weekStart = weekStartOf();
+  // Anchor all "today"/week logic to the team's timezone (see week.ts).
+  const today = todayIso();
+  const weekStart = currentWeekStart();
   const weekEnd = weekEndOf(weekStart);
+  const staleCutoff = isoDaysAgo(STALE_DAYS, today);
 
   const [
     { data: distributors },
@@ -32,9 +43,15 @@ export default async function ManagerPanelPage() {
       .select("id")
       .eq("kind", "distributor")
       .is("deleted_at", null)
-      .limit(5000),
-    supabase.from("assignments").select("company_id, salesperson_id"),
-    supabase.from("company_last_visit").select("company_id, last_visit_date"),
+      .limit(DEALER_CAP),
+    supabase
+      .from("assignments")
+      .select("company_id, salesperson_id")
+      .limit(DEALER_CAP),
+    supabase
+      .from("company_last_visit")
+      .select("company_id, last_visit_date")
+      .limit(DEALER_CAP),
     supabase
       .from("profiles")
       .select("id, full_name")
@@ -65,7 +82,7 @@ export default async function ManagerPanelPage() {
       .is("deleted_at", null)
       .gte("visit_date", weekStart)
       .lte("visit_date", weekEnd)
-      .limit(10000),
+      .limit(DEALER_CAP),
     supabase
       .from("visit_plans")
       .select("salesperson_id, status")
@@ -88,8 +105,8 @@ export default async function ManagerPanelPage() {
   ).length;
   const staleCount = dealers.filter((c) => {
     const last = lastVisitMap.get(c.id) ?? null;
-    const ds = daysSince(last);
-    return last === null || (ds !== null && ds >= STALE_DAYS);
+    // Never visited, or last completed visit is on/before the 30-day cutoff.
+    return last === null || last <= staleCutoff;
   }).length;
 
   // Per-salesperson tallies for the team summary.
