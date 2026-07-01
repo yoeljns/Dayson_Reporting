@@ -154,6 +154,7 @@ export interface VisitAnswer {
   value_text: string | null;
   value_number: number | null;
   value_date: string | null;
+  value_detail: string | null;
 }
 
 export interface VisitPlan {

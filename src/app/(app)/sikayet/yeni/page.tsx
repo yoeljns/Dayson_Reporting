@@ -193,9 +193,15 @@ function NewComplaintForm() {
 
           <div className="space-y-1.5">
             <Label>Bağlı distribütör (opsiyonel)</Label>
-            <CompanyPicker value={company} onChange={setCompany} minChars={3} />
+            <CompanyPicker
+              value={company}
+              onChange={setCompany}
+              minChars={3}
+              allowCreate
+            />
             <p className="text-xs text-muted-foreground">
-              Bağlıysa ilk 3 harfi yazıp distribütörü seçin.
+              Bağlıysa ilk 3 harfi yazıp distribütörü seçin; distribütör dışı yeni
+              firmayı ekleyebilirsiniz.
             </p>
           </div>
 

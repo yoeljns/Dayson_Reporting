@@ -242,6 +242,7 @@ export async function saveVisit(input: {
     valueText?: string | null;
     valueNumber?: number | null;
     valueDate?: string | null;
+    valueDetail?: string | null;
   }>;
   complete: boolean;
 }): Promise<{ ok?: boolean; error?: string }> {
@@ -263,6 +264,7 @@ export async function saveVisit(input: {
       value_text: a.valueText ?? null,
       value_number: a.valueNumber ?? null,
       value_date: a.valueDate ?? null,
+      value_detail: a.valueDetail ?? null,
     }));
 
   if (rows.length > 0) {

@@ -18,7 +18,6 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   CONTACT_ROLES,
@@ -110,6 +109,16 @@ export function VisitWizard({
   });
   const setVal = (qid: string, v: string) =>
     setValues((p) => ({ ...p, [qid]: v }));
+
+  // Free-text detail for "Diğer" answers.
+  const [details, setDetails] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const a of existingAnswers)
+      if (a.value_detail) init[a.question_id] = a.value_detail;
+    return init;
+  });
+  const setDetail = (qid: string, v: string) =>
+    setDetails((p) => ({ ...p, [qid]: v }));
 
   // Contacts
   const [contactList, setContactList] = useState<CompanyContact[]>(contacts);
@@ -244,7 +253,12 @@ export function VisitWizard({
         return { questionId: q.id, valueNumber: raw === "" ? null : Number(raw) };
       if (q.input_type === "date")
         return { questionId: q.id, valueDate: raw === "" ? null : raw };
-      return { questionId: q.id, valueText: raw === "" ? null : raw };
+      const detail = raw === "diger" ? (details[q.id]?.trim() || null) : null;
+      return {
+        questionId: q.id,
+        valueText: raw === "" ? null : raw,
+        valueDetail: detail,
+      };
     });
   }
 
@@ -360,6 +374,8 @@ export function VisitWizard({
               q={current.q}
               value={values[current.q.id] ?? ""}
               onChange={(v) => setVal(current.q.id, v)}
+              detail={details[current.q.id] ?? ""}
+              onDetailChange={(v) => setDetail(current.q.id, v)}
             />
           )}
 
@@ -470,14 +486,6 @@ export function VisitWizard({
                             )}
                           >
                             {b.name}
-                            {b.isOwn && (
-                              <Badge
-                                variant={on ? "secondary" : "success"}
-                                className="ml-1"
-                              >
-                                Biz
-                              </Badge>
-                            )}
                           </button>
                         );
                       })}
@@ -576,6 +584,13 @@ export function VisitWizard({
                               </option>
                             ))}
                         </Select>
+                        {(values[neden.id] ?? "") === "diger" && (
+                          <Input
+                            placeholder="Detay yazın…"
+                            value={details[neden.id] ?? ""}
+                            onChange={(e) => setDetail(neden.id, e.target.value)}
+                          />
+                        )}
                       </div>
                     )}
                   </>
@@ -641,11 +656,17 @@ function QuestionStep({
   q,
   value,
   onChange,
+  detail,
+  onDetailChange,
 }: {
   q: QuestionWithOptions;
   value: string;
   onChange: (v: string) => void;
+  detail: string;
+  onDetailChange: (v: string) => void;
 }) {
+  const isSelect =
+    q.input_type === "select" || q.input_type === "multiselect";
   return (
     <div className="space-y-1.5">
       <Label htmlFor={q.id}>
@@ -714,6 +735,13 @@ function QuestionStep({
       )}
       {q.input_type === "text" && (
         <Textarea id={q.id} value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+      {isSelect && value === "diger" && (
+        <Input
+          placeholder="Detay yazın…"
+          value={detail}
+          onChange={(e) => onDetailChange(e.target.value)}
+        />
       )}
     </div>
   );
