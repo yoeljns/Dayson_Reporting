@@ -16,6 +16,7 @@ const adminLinks = [
   { href: "/admin/bayiler", label: "Bayiler", adminOnly: true },
   { href: "/admin/kullanicilar", label: "Kullanıcılar", adminOnly: true },
   { href: "/admin/sorular", label: "Soru Kataloğu", adminOnly: true },
+  { href: "/admin/urun-rekabeti", label: "Ürün Rekabeti", adminOnly: true },
   { href: "/admin/ayarlar", label: "Ayarlar", adminOnly: true },
 ];
 

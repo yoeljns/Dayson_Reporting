@@ -5,6 +5,7 @@ import {
   buildRakip,
   buildKapsama,
   buildPlan,
+  buildMarka,
   type ReportBuilder,
 } from "@/lib/reports/builders";
 
@@ -17,7 +18,8 @@ export type FilterKind =
   | "dept" // complaint department select
   | "competitor" // competitor select
   | "segment" // segment select
-  | "kind"; // company kind select
+  | "kind" // company kind select
+  | "category"; // product category select
 
 export type ReportDef = {
   label: string;
@@ -63,6 +65,12 @@ export const REPORTS: Record<string, ReportDef> = {
     filters: ["weekrange", "sp"],
     build: buildPlan,
   },
+  marka: {
+    label: "Marka Rekabeti",
+    filenameBase: "marka-rekabeti",
+    filters: ["range", "category", "segment", "sp"],
+    build: buildMarka,
+  },
 };
 
 export type ReportType = keyof typeof REPORTS;
@@ -73,4 +81,5 @@ export const REPORT_ORDER: string[] = [
   "rakip",
   "kapsama",
   "plan",
+  "marka",
 ];

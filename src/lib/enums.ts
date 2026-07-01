@@ -113,6 +113,31 @@ export const PLAN_STATUS_LABELS: Record<PlanStatus, string> = {
   gonderildi: "Gönderildi",
 };
 
+export const SUPPLY_KINDS = ["brand", "own_production", "export"] as const;
+export type SupplyKind = (typeof SUPPLY_KINDS)[number];
+export const SUPPLY_KIND_LABELS: Record<SupplyKind, string> = {
+  brand: "Marka",
+  own_production: "Kendi üretimi",
+  export: "İhracat",
+};
+
+/** Suggested roles for a company contact (görüşülen kişi). */
+export const CONTACT_ROLES = [
+  "sahip",
+  "satin_alma",
+  "depo",
+  "muhasebe",
+  "diger",
+] as const;
+export type ContactRole = (typeof CONTACT_ROLES)[number];
+export const CONTACT_ROLE_LABELS: Record<ContactRole, string> = {
+  sahip: "Firma sahibi",
+  satin_alma: "Satın alma",
+  depo: "Depo",
+  muhasebe: "Muhasebe",
+  diger: "Diğer",
+};
+
 export const IMPORT_STATUSES = ["basarili", "kismi", "hata"] as const;
 export type ImportStatus = (typeof IMPORT_STATUSES)[number];
 export const IMPORT_STATUS_LABELS: Record<ImportStatus, string> = {

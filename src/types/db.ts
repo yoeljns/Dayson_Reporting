@@ -62,6 +62,7 @@ export interface Question {
   label_tr: string;
   input_type: QuestionInputType;
   applies_to: VisitType[] | null;
+  applies_to_kind: CompanyKind[] | null;
   is_required: boolean;
   sort_order: number;
   is_active: boolean;
@@ -88,10 +89,62 @@ export interface Visit {
   status: VisitStatus;
   visit_date: string;
   completed_at: string | null;
+  contact_id: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CompanyContact {
+  id: string;
+  company_id: string;
+  name: string;
+  phone: string | null;
+  role: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SupplyKind = "brand" | "own_production" | "export";
+
+export interface ProductCategory {
+  id: string;
+  code: string;
+  label_tr: string;
+  note: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ProductBrand {
+  id: string;
+  name: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ProductCategoryBrand {
+  id: string;
+  category_id: string;
+  brand_id: string;
+  is_own: boolean;
+  sort_order: number;
+  salesperson_id: string | null;
+  created_at: string;
+}
+
+export interface VisitProductAnswer {
+  id: string;
+  visit_id: string;
+  category_id: string;
+  brand_id: string | null;
+  custom_name: string | null;
+  supply_kind: SupplyKind;
+  created_at: string;
 }
 
 export interface VisitAnswer {

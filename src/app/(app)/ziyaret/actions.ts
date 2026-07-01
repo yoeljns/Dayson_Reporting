@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { VisitType } from "@/lib/enums";
+import type { VisitType, SupplyKind } from "@/lib/enums";
 
 /** Create a non-customer company on the fly. Returns the new company id. */
 export async function createNonCustomerCompany(input: {
@@ -80,6 +80,137 @@ export async function deleteVisit(
 
   revalidatePath("/");
   revalidatePath("/ziyaretler");
+  return { ok: true };
+}
+
+/** Create (or reuse) a company contact and return its id. */
+export async function upsertContact(input: {
+  companyId: string;
+  name: string;
+  phone?: string | null;
+  role?: string | null;
+}): Promise<{ id?: string; error?: string }> {
+  const name = input.name.trim();
+  if (!name) return { error: "Kişi adı zorunludur." };
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+
+  const { data, error } = await supabase
+    .from("company_contacts")
+    .insert({
+      company_id: input.companyId,
+      name,
+      phone: input.phone?.trim() || null,
+      role: input.role?.trim() || null,
+      created_by: user.id,
+    })
+    .select("id")
+    .single();
+  if (error) return { error: error.message };
+  return { id: data.id };
+}
+
+/** Set (or clear) the contact met on a visit. */
+export async function setVisitContact(input: {
+  visitId: string;
+  contactId: string | null;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("visits")
+    .update({ contact_id: input.contactId, updated_at: new Date().toISOString() })
+    .eq("id", input.visitId);
+  if (error) return { error: error.message };
+  return { ok: true };
+}
+
+/**
+ * Add a custom brand to a category for the current salesperson ("Diğer").
+ * Reuses an existing brand by case-insensitive name; links it to the category
+ * scoped to this rep so it is suggested to them next time.
+ */
+export async function addCustomBrand(input: {
+  categoryId: string;
+  name: string;
+}): Promise<{ brandId?: string; error?: string }> {
+  const name = input.name.trim();
+  if (!name) return { error: "Marka adı zorunludur." };
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+
+  // Find an existing brand (case-insensitive) or create it.
+  const { data: existing } = await supabase
+    .from("product_brands")
+    .select("id")
+    .ilike("name", name)
+    .limit(1)
+    .maybeSingle();
+
+  let brandId = existing?.id;
+  if (!brandId) {
+    const { data: created, error: bErr } = await supabase
+      .from("product_brands")
+      .insert({ name, created_by: user.id })
+      .select("id")
+      .single();
+    if (bErr || !created) return { error: bErr?.message ?? "Marka eklenemedi." };
+    brandId = created.id;
+  }
+
+  // Link to the category for this rep (ignore if it already exists).
+  await supabase
+    .from("product_category_brands")
+    .upsert(
+      {
+        category_id: input.categoryId,
+        brand_id: brandId,
+        salesperson_id: user.id,
+        is_own: false,
+      },
+      { onConflict: "category_id,brand_id,salesperson_id", ignoreDuplicates: true }
+    );
+
+  revalidatePath("/ziyaret");
+  return { brandId };
+}
+
+/** Replace the product-competition selections for a visit. */
+export async function saveVisitProducts(input: {
+  visitId: string;
+  selections: Array<{
+    categoryId: string;
+    brandId?: string | null;
+    customName?: string | null;
+    supplyKind?: SupplyKind;
+  }>;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+
+  await supabase
+    .from("visit_product_answers")
+    .delete()
+    .eq("visit_id", input.visitId);
+
+  const rows = input.selections.map((s) => ({
+    visit_id: input.visitId,
+    category_id: s.categoryId,
+    brand_id: s.brandId ?? null,
+    custom_name: s.customName?.trim() || null,
+    supply_kind: s.supplyKind ?? "brand",
+  }));
+
+  if (rows.length > 0) {
+    const { error } = await supabase.from("visit_product_answers").insert(rows);
+    if (error) return { error: error.message };
+  }
   return { ok: true };
 }
 

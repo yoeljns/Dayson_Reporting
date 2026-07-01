@@ -38,7 +38,7 @@ export default async function ReportsPage({
     initEnd = rr.end;
   }
 
-  const [{ data: salespeople }, { data: competitors }, preview] =
+  const [{ data: salespeople }, { data: competitors }, { data: prodCats }, preview] =
     await Promise.all([
       supabase
         .from("profiles")
@@ -46,6 +46,11 @@ export default async function ReportsPage({
         .eq("is_active", true)
         .order("full_name"),
       supabase.from("competitors").select("id, name").order("name"),
+      supabase
+        .from("product_categories")
+        .select("id, label_tr")
+        .eq("is_active", true)
+        .order("sort_order"),
       def.build(supabase, filters, { limit: 50 }),
     ]);
 
@@ -91,6 +96,7 @@ export default async function ReportsPage({
               competitor: filters.competitor ?? "",
               segment: filters.segment ?? "",
               kind: filters.kind ?? "",
+              category: filters.category ?? "",
             }}
             salespeople={
               ((salespeople ?? []) as { id: string; full_name: string }[]).map(
@@ -98,6 +104,12 @@ export default async function ReportsPage({
               )
             }
             competitors={(competitors ?? []) as { id: string; name: string }[]}
+            categories={
+              ((prodCats ?? []) as { id: string; label_tr: string }[]).map((c) => ({
+                id: c.id,
+                name: c.label_tr,
+              }))
+            }
           />
         </CardContent>
       </Card>

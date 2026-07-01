@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { AlertTriangle, Swords, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
-import { VisitForm } from "@/components/visit-form";
+import { VisitWizard } from "@/components/visit-wizard";
 import { DeleteVisitButton } from "@/components/delete-visit-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import {
   type ComplaintStatus,
   type ComplaintType,
 } from "@/lib/enums";
-import type { QuestionWithOptions, VisitAnswer } from "@/types/db";
+import type { QuestionWithOptions, VisitAnswer, CompanyContact } from "@/types/db";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -35,13 +35,13 @@ export default async function VisitDetailPage({
 }: {
   params: { id: string };
 }) {
-  await requireProfile();
+  const profile = await requireProfile();
   const supabase = createClient();
 
   const { data: visit } = await supabase
     .from("visits")
     .select(
-      "id, visit_type, status, visit_date, companies(id, name, kind, city, segment, debt_status)"
+      "id, visit_type, status, visit_date, contact_id, companies(id, name, kind, city, segment, debt_status)"
     )
     .eq("id", params.id)
     .single();
@@ -59,29 +59,106 @@ export default async function VisitDetailPage({
         debt_status: string | null;
       } | null);
 
-  const [{ data: questions }, { data: answers }, { data: complaints }, { data: observations }] =
-    await Promise.all([
-      supabase
-        .from("questions")
-        .select("*, question_options(*)")
-        .eq("is_active", true)
-        .order("sort_order"),
-      supabase.from("visit_answers").select("*").eq("visit_id", params.id),
-      supabase
-        .from("complaints")
-        .select("id, title, type, status")
-        .eq("visit_id", params.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("competitor_observations")
-        .select("id, product_name, observed_price, competitors(name)")
-        .eq("visit_id", params.id)
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    { data: questions },
+    { data: answers },
+    { data: complaints },
+    { data: observations },
+    { data: cats },
+    { data: pcb },
+    { data: products },
+    { data: contacts },
+  ] = await Promise.all([
+    supabase
+      .from("questions")
+      .select("*, question_options(*)")
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase.from("visit_answers").select("*").eq("visit_id", params.id),
+    supabase
+      .from("complaints")
+      .select("id, title, type, status")
+      .eq("visit_id", params.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("competitor_observations")
+      .select("id, product_name, observed_price, competitors(name)")
+      .eq("visit_id", params.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("product_categories")
+      .select("id, label_tr, sort_order")
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase
+      .from("product_category_brands")
+      .select("category_id, brand_id, is_own, sort_order, product_brands(name)")
+      .or(`salesperson_id.is.null,salesperson_id.eq.${profile.id}`),
+    supabase
+      .from("visit_product_answers")
+      .select("category_id, brand_id, supply_kind")
+      .eq("visit_id", params.id),
+    company
+      ? supabase
+          .from("company_contacts")
+          .select("*")
+          .eq("company_id", company.id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as unknown[] }),
+  ]);
 
-  // Filter questions by visit type (applies_to null = all).
-  const applicable = ((questions as QuestionWithOptions[]) ?? []).filter(
-    (q) => !q.applies_to || q.applies_to.includes(visit.visit_type)
+  // Filter questions by visit type + company kind (null = all).
+  const applicable = ((questions as QuestionWithOptions[]) ?? []).filter((q) => {
+    if (q.applies_to && !q.applies_to.includes(visit.visit_type)) return false;
+    if (
+      q.applies_to_kind &&
+      company &&
+      !q.applies_to_kind.includes(company.kind)
+    )
+      return false;
+    return true;
+  });
+
+  // Build product-matrix options: brands per active category (global ∪ this rep),
+  // own brands first.
+  type PcbRow = {
+    category_id: string;
+    brand_id: string;
+    is_own: boolean;
+    sort_order: number;
+    product_brands: { name: string } | { name: string }[] | null;
+  };
+  const brandsByCat = new Map<
+    string,
+    { brandId: string; name: string; isOwn: boolean; sort: number }[]
+  >();
+  for (const row of (pcb as PcbRow[] | null) ?? []) {
+    const b = Array.isArray(row.product_brands)
+      ? row.product_brands[0]
+      : row.product_brands;
+    const arr = brandsByCat.get(row.category_id) ?? [];
+    if (!arr.some((x) => x.brandId === row.brand_id))
+      arr.push({
+        brandId: row.brand_id,
+        name: b?.name ?? "?",
+        isOwn: row.is_own,
+        sort: row.sort_order,
+      });
+    brandsByCat.set(row.category_id, arr);
+  }
+  const categoryOptions = ((cats as { id: string; label_tr: string }[] | null) ?? []).map(
+    (c) => ({
+      id: c.id,
+      label_tr: c.label_tr,
+      brands: (brandsByCat.get(c.id) ?? [])
+        .sort(
+          (a, b) =>
+            Number(b.isOwn) - Number(a.isOwn) ||
+            a.sort - b.sort ||
+            a.name.localeCompare(b.name, "tr")
+        )
+        .map((b) => ({ brandId: b.brandId, name: b.name, isOwn: b.isOwn })),
+    })
   );
 
   const linkParams = `company=${company?.id}&visit=${visit.id}`;
@@ -109,10 +186,22 @@ export default async function VisitDetailPage({
         </div>
       </div>
 
-      <VisitForm
+      <VisitWizard
         visitId={visit.id}
+        companyId={company?.id ?? ""}
+        companyKind={(company?.kind ?? "distributor") as "distributor" | "non_customer"}
         questions={applicable}
-        existing={(answers as VisitAnswer[]) ?? []}
+        existingAnswers={(answers as VisitAnswer[]) ?? []}
+        categories={categoryOptions}
+        existingProducts={
+          (products as {
+            category_id: string;
+            brand_id: string | null;
+            supply_kind: string;
+          }[]) ?? []
+        }
+        contacts={(contacts as CompanyContact[]) ?? []}
+        currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}
       />
 

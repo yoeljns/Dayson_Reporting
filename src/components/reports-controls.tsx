@@ -28,6 +28,7 @@ export function ReportsControls({
   initial,
   salespeople,
   competitors,
+  categories,
 }: {
   reportType: string;
   filters: FilterKind[];
@@ -40,9 +41,11 @@ export function ReportsControls({
     competitor: string;
     segment: string;
     kind: string;
+    category: string;
   };
   salespeople: Option[];
   competitors: Option[];
+  categories: Option[];
 }) {
   const router = useRouter();
   const [start, setStart] = useState(initial.start);
@@ -53,6 +56,7 @@ export function ReportsControls({
   const [competitor, setCompetitor] = useState(initial.competitor);
   const [segment, setSegment] = useState(initial.segment);
   const [kind, setKind] = useState(initial.kind);
+  const [category, setCategory] = useState(initial.category);
 
   const has = (k: FilterKind) => filters.includes(k);
 
@@ -68,9 +72,10 @@ export function ReportsControls({
     if (has("competitor") && competitor) p.competitor = competitor;
     if (has("segment") && segment) p.segment = segment;
     if (has("kind") && kind) p.kind = kind;
+    if (has("category") && category) p.category = category;
     return p;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start, end, sp, status, dept, competitor, segment, kind, reportType]);
+  }, [start, end, sp, status, dept, competitor, segment, kind, category, reportType]);
 
   function apply(next: Record<string, string>) {
     const qs = new URLSearchParams({ r: reportType, ...next });
@@ -223,6 +228,28 @@ export function ReportsControls({
             >
               <option value="">Tüm rakipler</option>
               {competitors.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+
+        {has("category") && (
+          <div className="space-y-1">
+            <Label htmlFor="category">Kategori</Label>
+            <Select
+              id="category"
+              value={category}
+              onChange={(e) => {
+                setCategory(e.target.value);
+                apply(e.target.value ? { ...params, category: e.target.value } : omit(params, "category"));
+              }}
+              className="w-52"
+            >
+              <option value="">Tüm kategoriler</option>
+              {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>

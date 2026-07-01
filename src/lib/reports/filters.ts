@@ -21,6 +21,7 @@ export type ReportFilters = {
   competitor?: string;
   segment?: string;
   kind?: string;
+  category?: string;
 };
 
 const ISO = "yyyy-MM-dd";
@@ -57,6 +58,7 @@ export function parseFilters(sp: URLSearchParams): ReportFilters {
     competitor: clean(sp.get("competitor")),
     segment: clean(sp.get("segment")),
     kind: clean(sp.get("kind")),
+    category: clean(sp.get("category")),
   };
 }
 

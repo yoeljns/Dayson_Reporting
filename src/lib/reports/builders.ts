@@ -11,6 +11,7 @@ import {
   COMPLAINT_OWNER_DEPTS,
   COMPLAINT_PRIORITY_LABELS,
   DEBT_STATUS_LABELS,
+  SUPPLY_KIND_LABELS,
   SEGMENTS,
   COMPANY_KINDS,
   type VisitType,
@@ -53,6 +54,7 @@ export const REPORT_RANGE_MODE: Record<string, RangeMode> = {
   rakip: "d30",
   kapsama: "none",
   plan: "week",
+  marka: "d30",
 };
 
 // ---------------------------------------------------------------------------
@@ -683,4 +685,121 @@ export const buildPlan: ReportBuilder = async (supabase, f, opts) => {
   const capped = rows.length > max;
   const limited = capped ? rows.slice(0, max) : rows;
   return { sheetName: "Haftalık Plan", headers, rows: limited, capped };
+};
+
+// ---------------------------------------------------------------------------
+// 7) Marka Rekabeti — per category × brand: how many dealers buy each brand
+// ---------------------------------------------------------------------------
+export const buildMarka: ReportBuilder = async (supabase, f, opts) => {
+  const max = opts?.limit ?? ROW_CAP;
+  const { start, end } = resolveRange(f, "d30");
+  const headers = ["Kategori", "Marka", "Biz/Rakip", "Bayi Sayısı", "Gözlem Sayısı"];
+
+  // Matching visits (date/salesperson/segment) → visit → company map.
+  let vq = supabase
+    .from("visits")
+    .select("id, company_id, companies!inner(segment)")
+    .is("deleted_at", null)
+    .gte("visit_date", start)
+    .lte("visit_date", end)
+    .limit(ROW_CAP + 1);
+  if (f.sp) vq = vq.eq("salesperson_id", f.sp);
+  if (f.segment && (SEGMENTS as readonly string[]).includes(f.segment))
+    vq = vq.eq("companies.segment", f.segment);
+  const { data: visitsData } = await vq;
+  const vlist = (visitsData ?? []) as { id: string; company_id: string }[];
+  let capped = vlist.length > ROW_CAP;
+  const vrows = capped ? vlist.slice(0, ROW_CAP) : vlist;
+  const visitCompany = new Map(vrows.map((v) => [v.id, v.company_id]));
+  const visitIds = vrows.map((v) => v.id);
+  if (visitIds.length === 0) return { sheetName: "Marka Rekabeti", headers, rows: [] };
+
+  // Global own/competitor map per (category, brand).
+  const { data: globals } = await supabase
+    .from("product_category_brands")
+    .select("category_id, brand_id, is_own")
+    .is("salesperson_id", null);
+  const ownMap = new Map(
+    ((globals ?? []) as { category_id: string; brand_id: string; is_own: boolean }[]).map(
+      (g) => [`${g.category_id}|${g.brand_id}`, g.is_own]
+    )
+  );
+
+  type Ans = {
+    visit_id: string;
+    category_id: string;
+    brand_id: string | null;
+    supply_kind: string;
+    product_categories: { label_tr: string; sort_order: number } | { label_tr: string; sort_order: number }[] | null;
+    product_brands: { name: string } | { name: string }[] | null;
+  };
+  const answers: Ans[] = [];
+  for (const ids of chunk(visitIds, 500)) {
+    if (ids.length === 0) continue;
+    let pq = supabase
+      .from("visit_product_answers")
+      .select(
+        "visit_id, category_id, brand_id, supply_kind, product_categories(label_tr, sort_order), product_brands(name)"
+      )
+      .in("visit_id", ids);
+    if (f.category) pq = pq.eq("category_id", f.category);
+    const { data } = await pq;
+    answers.push(...((data ?? []) as Ans[]));
+  }
+
+  type Agg = {
+    catLabel: string;
+    catSort: number;
+    brand: string;
+    isOwn: boolean | null;
+    special: boolean;
+    companies: Set<string>;
+    count: number;
+  };
+  const map = new Map<string, Agg>();
+  for (const a of answers) {
+    const cat = one(a.product_categories);
+    const br = one(a.product_brands);
+    const special = a.supply_kind !== "brand";
+    const key = `${a.category_id}|${special ? a.supply_kind : a.brand_id}`;
+    let agg = map.get(key);
+    if (!agg) {
+      agg = {
+        catLabel: cat?.label_tr ?? "?",
+        catSort: cat?.sort_order ?? 0,
+        brand: special
+          ? SUPPLY_KIND_LABELS[a.supply_kind as keyof typeof SUPPLY_KIND_LABELS] ??
+            a.supply_kind
+          : br?.name ?? "?",
+        isOwn: special ? null : ownMap.get(`${a.category_id}|${a.brand_id}`) ?? false,
+        special,
+        companies: new Set<string>(),
+        count: 0,
+      };
+      map.set(key, agg);
+    }
+    const companyId = visitCompany.get(a.visit_id);
+    if (companyId) agg.companies.add(companyId);
+    agg.count++;
+  }
+
+  let rows: SheetRow[] = [...map.values()]
+    .sort(
+      (a, b) =>
+        a.catSort - b.catSort ||
+        Number(b.isOwn) - Number(a.isOwn) ||
+        b.companies.size - a.companies.size
+    )
+    .map((a) => ({
+      Kategori: a.catLabel,
+      Marka: a.brand,
+      "Biz/Rakip": a.special ? "-" : a.isOwn ? "Biz" : "Rakip",
+      "Bayi Sayısı": a.companies.size,
+      "Gözlem Sayısı": a.count,
+    }));
+  if (rows.length > max) {
+    capped = true;
+    rows = rows.slice(0, max);
+  }
+  return { sheetName: "Marka Rekabeti", headers, rows, capped };
 };
