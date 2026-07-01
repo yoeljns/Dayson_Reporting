@@ -269,8 +269,13 @@ export function VisitWizard({
       // Only require questions actually shown in the wizard.
       const rendered = new Set<string>();
       for (const s of steps) if (s.kind === "question") rendered.add(s.q.id);
+      const hasOrder = steps.some((s) => s.kind === "order");
       const sip = byCode.get("siparis_alindi");
-      if (sip && steps.some((s) => s.kind === "order")) rendered.add(sip.id);
+      if (sip && hasOrder) rendered.add(sip.id);
+      // The "sipariş alınmama nedeni" field only renders when order = Hayır.
+      const neden = byCode.get("siparis_alinmama_nedeni");
+      if (neden && hasOrder && sip && (values[sip.id] ?? "") === "hayir")
+        rendered.add(neden.id);
       const missing = questions.find(
         (q) =>
           q.is_required &&
