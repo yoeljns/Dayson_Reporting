@@ -22,9 +22,17 @@ import { saveComplaint } from "../actions";
 export default function NewComplaintPage() {
   return (
     <Suspense>
-      <NewComplaintForm />
+      <KeyedComplaintForm />
     </Suspense>
   );
+}
+
+// Remount the form when the ?draft target changes so no state leaks between a
+// resumed draft and a fresh complaint (same route → React would otherwise keep
+// the component mounted).
+function KeyedComplaintForm() {
+  const draftId = useSearchParams().get("draft");
+  return <NewComplaintForm key={draftId ?? "new"} />;
 }
 
 function NewComplaintForm() {
@@ -72,7 +80,8 @@ function NewComplaintForm() {
         "id, company_id, complainant_name, complainant_phone, type, product_category_id, description, priority, due_date, companies(name)"
       )
       .eq("id", draftId)
-      .single()
+      .eq("is_draft", true)
+      .maybeSingle()
       .then(({ data }) => {
         if (!data) return;
         setEditId(data.id as string);

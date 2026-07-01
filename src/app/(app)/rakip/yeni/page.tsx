@@ -18,9 +18,17 @@ import { saveObservation } from "../actions";
 export default function NewCompetitorObservationPage() {
   return (
     <Suspense>
-      <NewCompetitorObservationForm />
+      <KeyedObservationForm />
     </Suspense>
   );
+}
+
+// Remount the form when the ?draft target changes so no state leaks between a
+// resumed draft and a fresh observation (same route → React would otherwise
+// keep the component mounted).
+function KeyedObservationForm() {
+  const draftId = useSearchParams().get("draft");
+  return <NewCompetitorObservationForm key={draftId ?? "new"} />;
 }
 
 function NewCompetitorObservationForm() {
@@ -64,7 +72,8 @@ function NewCompetitorObservationForm() {
         "id, product_name, observed_price, city, note, competitor_id, company_id, competitors(name), companies(name)"
       )
       .eq("id", draftId)
-      .single()
+      .eq("is_draft", true)
+      .maybeSingle()
       .then(({ data }) => {
         if (!data) return;
         setEditId(data.id as string);
