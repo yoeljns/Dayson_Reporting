@@ -15,17 +15,24 @@ export default async function ProductCompetitionPage() {
   await requireAdmin();
   const admin = createAdminClient();
 
-  const [{ data: cats }, { data: links }] = await Promise.all([
-    admin
-      .from("product_categories")
-      .select("id, code, label_tr, is_active, sort_order")
-      .order("sort_order"),
-    admin
-      .from("product_category_brands")
-      .select("id, category_id, brand_id, is_own, sort_order, product_brands!inner(name)")
-      .eq("product_brands.is_active", true)
-      .is("salesperson_id", null),
-  ]);
+  const [{ data: cats }, { data: links }, { data: inactive }] =
+    await Promise.all([
+      admin
+        .from("product_categories")
+        .select("id, code, label_tr, is_active, sort_order")
+        .order("sort_order")
+        .order("id"),
+      admin
+        .from("product_category_brands")
+        .select("id, category_id, brand_id, is_own, sort_order, product_brands!inner(name)")
+        .eq("product_brands.is_active", true)
+        .is("salesperson_id", null),
+      admin
+        .from("product_brands")
+        .select("id, name")
+        .eq("is_active", false)
+        .order("name"),
+    ]);
 
   const linksByCat = new Map<string, PcbRow[]>();
   for (const l of (links as PcbRow[] | null) ?? []) {
@@ -60,7 +67,12 @@ export default async function ProductCompetitionPage() {
           markayı &quot;Biz / Rakip&quot; işaretle.
         </p>
       </div>
-      <ProductMatrixManager categories={categories} />
+      <ProductMatrixManager
+        categories={categories}
+        inactiveBrands={
+          (inactive as { id: string; name: string }[] | null) ?? []
+        }
+      />
     </div>
   );
 }
