@@ -62,20 +62,24 @@ export async function createDealer(input: {
     (DEBT_STATUSES as readonly string[]).includes(input.debtStatus)
       ? (input.debtStatus as DebtStatus)
       : null;
+  const city = input.city?.trim() || null;
+  const phone = input.phone?.trim() || null;
+  const notes = input.notes?.trim() || null;
   const fields = {
     name,
     logo_code: logoCode,
     segment,
     debt_status: debtStatus,
-    city: input.city?.trim() || null,
-    phone: input.phone?.trim() || null,
-    notes: input.notes?.trim() || null,
+    city,
+    phone,
+    notes,
   };
 
   let companyId: string | null = null;
   let restored = false;
 
-  // Reconcile by logo code (its unique index ignores deleted rows too).
+  // Reconcile by logo code (its unique index covers archived rows too, so the
+  // code is still occupied while a dealer is only soft-deleted).
   if (logoCode) {
     const { data: existing } = await admin
       .from("companies")
@@ -87,10 +91,21 @@ export async function createDealer(input: {
       if (!existing.deleted_at) {
         return { error: "Bu logo kodu zaten kullanımda." };
       }
-      // Archived dealer with this code → restore + update.
+      // Archived dealer with this code → restore. Only overwrite fields the
+      // manager actually filled in; keep the dealer's stored values otherwise.
+      const restorePatch: Record<string, unknown> = {
+        name,
+        kind: "distributor",
+        deleted_at: null,
+      };
+      if (segment !== null) restorePatch.segment = segment;
+      if (debtStatus !== null) restorePatch.debt_status = debtStatus;
+      if (city !== null) restorePatch.city = city;
+      if (phone !== null) restorePatch.phone = phone;
+      if (notes !== null) restorePatch.notes = notes;
       const { error } = await admin
         .from("companies")
-        .update({ ...fields, kind: "distributor", deleted_at: null })
+        .update(restorePatch)
         .eq("id", existing.id);
       if (error) return { error: error.message };
       companyId = existing.id;

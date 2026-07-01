@@ -21,6 +21,7 @@ export default async function DealersPage() {
         .from("profiles")
         .select("id, full_name")
         .eq("is_active", true)
+        .eq("role", "salesperson")
         .order("full_name"),
     ]);
 
