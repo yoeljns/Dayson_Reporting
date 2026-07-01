@@ -57,22 +57,28 @@ export async function addBrandLink(input: {
   if (!name) return { error: "Marka adı zorunludur." };
 
   const admin = createAdminClient();
-  const { data: existing } = await admin
-    .from("product_brands")
-    .select("id")
-    .ilike("name", name)
-    .limit(1)
-    .maybeSingle();
+  const findBrand = async () =>
+    (
+      await admin
+        .from("product_brands")
+        .select("id")
+        .ilike("name", name)
+        .limit(1)
+        .maybeSingle()
+    ).data?.id as string | undefined;
 
-  let brandId = existing?.id;
+  let brandId = await findBrand();
   if (!brandId) {
     const { data: created, error: bErr } = await admin
       .from("product_brands")
       .insert({ name })
       .select("id")
       .single();
-    if (bErr || !created) return { error: bErr?.message ?? "Marka eklenemedi." };
-    brandId = created.id;
+    if (created) brandId = created.id;
+    else {
+      brandId = await findBrand(); // lost the unique(lower(name)) race
+      if (!brandId) return { error: bErr?.message ?? "Marka eklenemedi." };
+    }
   }
 
   // Already linked globally?

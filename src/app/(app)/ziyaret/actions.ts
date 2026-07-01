@@ -99,6 +99,16 @@ export async function upsertContact(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
 
+  // Reuse an existing contact for this company (case-insensitive name).
+  const { data: existing } = await supabase
+    .from("company_contacts")
+    .select("id")
+    .eq("company_id", input.companyId)
+    .ilike("name", name)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return { id: existing.id };
+
   const { data, error } = await supabase
     .from("company_contacts")
     .insert({
@@ -146,37 +156,51 @@ export async function addCustomBrand(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
 
-  // Find an existing brand (case-insensitive) or create it.
-  const { data: existing } = await supabase
-    .from("product_brands")
-    .select("id")
-    .ilike("name", name)
-    .limit(1)
-    .maybeSingle();
+  // Find an existing brand (case-insensitive) or create it. If a concurrent
+  // insert wins the unique(lower(name)) race, re-select instead of erroring.
+  const findBrand = async () =>
+    (
+      await supabase
+        .from("product_brands")
+        .select("id")
+        .ilike("name", name)
+        .limit(1)
+        .maybeSingle()
+    ).data?.id as string | undefined;
 
-  let brandId = existing?.id;
+  let brandId = await findBrand();
   if (!brandId) {
     const { data: created, error: bErr } = await supabase
       .from("product_brands")
       .insert({ name, created_by: user.id })
       .select("id")
       .single();
-    if (bErr || !created) return { error: bErr?.message ?? "Marka eklenemedi." };
-    brandId = created.id;
+    if (created) brandId = created.id;
+    else {
+      brandId = await findBrand(); // lost the race → reuse the winner
+      if (!brandId) return { error: bErr?.message ?? "Marka eklenemedi." };
+    }
   }
 
-  // Link to the category for this rep (ignore if it already exists).
-  await supabase
+  // Link to the category for this rep if not already linked. (A column-list
+  // upsert can't infer the PARTIAL unique index, so check-then-insert.)
+  const { data: link } = await supabase
     .from("product_category_brands")
-    .upsert(
-      {
-        category_id: input.categoryId,
-        brand_id: brandId,
-        salesperson_id: user.id,
-        is_own: false,
-      },
-      { onConflict: "category_id,brand_id,salesperson_id", ignoreDuplicates: true }
-    );
+    .select("id")
+    .eq("category_id", input.categoryId)
+    .eq("brand_id", brandId)
+    .eq("salesperson_id", user.id)
+    .maybeSingle();
+  if (!link) {
+    const { error: lErr } = await supabase.from("product_category_brands").insert({
+      category_id: input.categoryId,
+      brand_id: brandId,
+      salesperson_id: user.id,
+      is_own: false,
+    });
+    // A duplicate (23505) from a concurrent add is fine; anything else surfaces.
+    if (lErr && lErr.code !== "23505") return { error: lErr.message };
+  }
 
   revalidatePath("/ziyaret");
   return { brandId };
@@ -194,23 +218,19 @@ export async function saveVisitProducts(input: {
 }): Promise<{ ok?: boolean; error?: string }> {
   const supabase = createClient();
 
-  await supabase
-    .from("visit_product_answers")
-    .delete()
-    .eq("visit_id", input.visitId);
-
+  // Atomic delete+insert via RPC so a failed insert never wipes prior answers.
   const rows = input.selections.map((s) => ({
-    visit_id: input.visitId,
     category_id: s.categoryId,
     brand_id: s.brandId ?? null,
     custom_name: s.customName?.trim() || null,
     supply_kind: s.supplyKind ?? "brand",
   }));
 
-  if (rows.length > 0) {
-    const { error } = await supabase.from("visit_product_answers").insert(rows);
-    if (error) return { error: error.message };
-  }
+  const { error } = await supabase.rpc("replace_visit_products", {
+    p_visit_id: input.visitId,
+    p_rows: rows,
+  });
+  if (error) return { error: error.message };
   return { ok: true };
 }
 

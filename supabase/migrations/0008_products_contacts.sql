@@ -225,3 +225,23 @@ from (values
 join product_categories c on c.code = v.cat_code
 join product_brands b on lower(b.name) = lower(v.brand_name)
 on conflict do nothing;
+
+-- Atomically replace a visit's product-competition answers (delete + insert in
+-- one transaction). security invoker so the caller's RLS still applies.
+create or replace function replace_visit_products(p_visit_id uuid, p_rows jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  delete from visit_product_answers where visit_id = p_visit_id;
+  insert into visit_product_answers (visit_id, category_id, brand_id, custom_name, supply_kind)
+  select p_visit_id,
+         (r->>'category_id')::uuid,
+         nullif(r->>'brand_id', '')::uuid,
+         nullif(r->>'custom_name', ''),
+         coalesce(nullif(r->>'supply_kind', ''), 'brand')
+  from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r;
+end;
+$$;

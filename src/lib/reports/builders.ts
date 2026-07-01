@@ -702,6 +702,7 @@ export const buildMarka: ReportBuilder = async (supabase, f, opts) => {
     .is("deleted_at", null)
     .gte("visit_date", start)
     .lte("visit_date", end)
+    .order("visit_date", { ascending: false })
     .limit(ROW_CAP + 1);
   if (f.sp) vq = vq.eq("salesperson_id", f.sp);
   if (f.segment && (SEGMENTS as readonly string[]).includes(f.segment))

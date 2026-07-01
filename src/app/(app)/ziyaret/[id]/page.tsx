@@ -41,7 +41,7 @@ export default async function VisitDetailPage({
   const { data: visit } = await supabase
     .from("visits")
     .select(
-      "id, visit_type, status, visit_date, contact_id, companies(id, name, kind, city, segment, debt_status)"
+      "id, visit_type, status, visit_date, contact_id, salesperson_id, companies(id, name, kind, city, segment, debt_status)"
     )
     .eq("id", params.id)
     .single();
@@ -93,7 +93,13 @@ export default async function VisitDetailPage({
     supabase
       .from("product_category_brands")
       .select("category_id, brand_id, is_own, sort_order, product_brands(name)")
-      .or(`salesperson_id.is.null,salesperson_id.eq.${profile.id}`),
+      // Global options ∪ the VISIT OWNER's custom brands (so a manager viewing
+      // still sees the rep's "Diğer" additions).
+      .or(
+        `salesperson_id.is.null,salesperson_id.eq.${
+          (visit.salesperson_id as string) ?? profile.id
+        }`
+      ),
     supabase
       .from("visit_product_answers")
       .select("category_id, brand_id, supply_kind")
@@ -188,6 +194,7 @@ export default async function VisitDetailPage({
 
       <VisitWizard
         visitId={visit.id}
+        isOwner={visit.salesperson_id === profile.id}
         companyId={company?.id ?? ""}
         companyKind={(company?.kind ?? "distributor") as "distributor" | "non_customer"}
         questions={applicable}

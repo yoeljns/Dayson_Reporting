@@ -48,6 +48,7 @@ const HANDLED_CODES = new Set([
 
 export function VisitWizard({
   visitId,
+  isOwner,
   companyId,
   companyKind,
   questions,
@@ -59,6 +60,7 @@ export function VisitWizard({
   initialCompleted,
 }: {
   visitId: string;
+  isOwner: boolean;
   companyId: string;
   companyKind: CompanyKind;
   questions: QuestionWithOptions[];
@@ -525,6 +527,12 @@ export function VisitWizard({
         </CardContent>
       </Card>
 
+      {!isOwner && (
+        <p className="text-xs text-muted-foreground">
+          Bu ziyaret başka bir pazarlamacıya ait — yalnızca görüntüleme.
+        </p>
+      )}
+
       {/* Navigation */}
       <div className="flex items-center gap-2">
         <Button
@@ -534,22 +542,26 @@ export function VisitWizard({
         >
           <ArrowLeft className="mr-1 h-4 w-4" /> Geri
         </Button>
-        <Button
-          variant="ghost"
-          disabled={pending}
-          onClick={() => persist(false)}
-        >
-          Taslak kaydet
-        </Button>
-        {isLast ? (
+        {isOwner && (
           <Button
-            className="ml-auto"
+            variant="ghost"
             disabled={pending}
-            onClick={() => persist(true)}
+            onClick={() => persist(false)}
           >
-            <Check className="mr-1 h-4 w-4" />
-            {initialCompleted ? "Güncelle" : "Tamamla"}
+            Taslak kaydet
           </Button>
+        )}
+        {isLast ? (
+          isOwner && (
+            <Button
+              className="ml-auto"
+              disabled={pending}
+              onClick={() => persist(true)}
+            >
+              <Check className="mr-1 h-4 w-4" />
+              {initialCompleted ? "Güncelle" : "Tamamla"}
+            </Button>
+          )
         ) : (
           <Button
             className="ml-auto"
