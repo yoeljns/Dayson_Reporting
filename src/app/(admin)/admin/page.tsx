@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
+import { todayIso } from "@/lib/week";
 import { Card, CardContent } from "@/components/ui/card";
 
 async function count(
@@ -16,7 +17,7 @@ async function count(
 
 export default async function AdminHome() {
   await requireManager();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   const [openComplaints, todayVisits, totalDealers, observations] =
     await Promise.all([

@@ -5,7 +5,7 @@ import { requireProfile } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PLAN_STATUS_LABELS, type PlanStatus } from "@/lib/enums";
-import { weekStartOf, shiftWeek, weekRangeLabel } from "@/lib/week";
+import { currentWeekStart, shiftWeek, weekRangeLabel } from "@/lib/week";
 import { getPlanDeadline } from "@/lib/settings";
 import { PlanWeekPicker } from "@/components/plan-week-picker";
 import { PlanDeadlineBanner } from "@/components/plan-deadline-banner";
@@ -35,7 +35,7 @@ export default async function PlansPage() {
   const isSalesperson = profile.role === "salesperson";
   const byWeek = new Map(plans.map((p) => [p.week_start, p]));
 
-  const thisWeek = weekStartOf();
+  const thisWeek = currentWeekStart();
   // This week + the next five — the weeks a rep can plan ahead for.
   const upcoming = Array.from({ length: 6 }, (_, i) => shiftWeek(thisWeek, i)).map(
     (w) => {

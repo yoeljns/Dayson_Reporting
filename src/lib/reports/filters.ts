@@ -1,5 +1,9 @@
 import { addDays, parseISO, format, startOfMonth } from "date-fns";
-import { weekStartOf } from "@/lib/week";
+import { weekStartOf, currentWeekStart, todayIso } from "@/lib/week";
+
+// All "today"-anchored defaults resolve in the team's timezone (Europe/Istanbul,
+// see week.ts) — a UTC server must not shift ranges by a day after midnight TR.
+export { todayIso };
 
 /**
  * Report filter parsing + shared limits + date-range resolution.
@@ -26,10 +30,6 @@ export type ReportFilters = {
 
 const ISO = "yyyy-MM-dd";
 
-export function todayIso(): string {
-  return format(new Date(), ISO);
-}
-
 export function addDaysIso(iso: string, n: number): string {
   return format(addDays(parseISO(iso), n), ISO);
 }
@@ -40,7 +40,7 @@ export function nextDayIso(iso: string): string {
 }
 
 export function firstOfMonthIso(): string {
-  return format(startOfMonth(new Date()), ISO);
+  return format(startOfMonth(parseISO(todayIso())), ISO);
 }
 
 function clean(v: string | null): string | undefined {
@@ -68,7 +68,7 @@ export function resolveRange(
   mode: RangeMode
 ): { start: string; end: string } {
   if (mode === "week") {
-    const start = f.start ? weekStartOf(parseISO(f.start)) : weekStartOf();
+    const start = f.start ? weekStartOf(parseISO(f.start)) : currentWeekStart();
     const end = f.end ? weekStartOf(parseISO(f.end)) : start;
     return { start, end };
   }

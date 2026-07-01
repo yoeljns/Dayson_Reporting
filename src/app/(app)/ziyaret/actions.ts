@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { todayIso } from "@/lib/week";
 import type { VisitType, SupplyKind } from "@/lib/enums";
 
 /** Create a non-customer company on the fly. Returns the new company id. */
@@ -53,6 +54,9 @@ export async function createDraftVisit(input: {
       salesperson_id: user.id,
       visit_type: input.visitType,
       status: "taslak",
+      // Explicit Istanbul date — the DB default is current_date in UTC, which
+      // mis-dates visits logged between 00:00 and 03:00 TR.
+      visit_date: todayIso(),
     })
     .select("id")
     .single();
@@ -248,9 +252,7 @@ export async function saveVisit(input: {
 }): Promise<{ ok?: boolean; error?: string }> {
   const supabase = createClient();
 
-  // Upsert answers (delete-then-insert keeps it simple and RLS-safe).
-  await supabase.from("visit_answers").delete().eq("visit_id", input.visitId);
-
+  // Atomic delete+insert via RPC so a failed insert never wipes prior answers.
   const rows = input.answers
     .filter(
       (a) =>
@@ -259,18 +261,18 @@ export async function saveVisit(input: {
         a.valueDate != null
     )
     .map((a) => ({
-      visit_id: input.visitId,
       question_id: a.questionId,
       value_text: a.valueText ?? null,
-      value_number: a.valueNumber ?? null,
+      value_number: a.valueNumber == null ? null : String(a.valueNumber),
       value_date: a.valueDate ?? null,
       value_detail: a.valueDetail ?? null,
     }));
 
-  if (rows.length > 0) {
-    const { error } = await supabase.from("visit_answers").insert(rows);
-    if (error) return { error: error.message };
-  }
+  const { error } = await supabase.rpc("replace_visit_answers", {
+    p_visit_id: input.visitId,
+    p_rows: rows,
+  });
+  if (error) return { error: error.message };
 
   const { error: vErr } = await supabase
     .from("visits")

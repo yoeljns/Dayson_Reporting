@@ -3,7 +3,7 @@ import { Plus, FileEdit, AlertTriangle, Swords } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { getEodReminder, getPlanDeadline } from "@/lib/settings";
-import { weekStartOf, shiftWeek } from "@/lib/week";
+import { todayIso, currentWeekStart, shiftWeek } from "@/lib/week";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { VISIT_TYPE_LABELS } from "@/lib/enums";
 export default async function HomePage() {
   const profile = await requireProfile();
   const supabase = createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const isSalesperson = profile.role === "salesperson";
 
   const [
@@ -43,7 +43,7 @@ export default async function HomePage() {
       .from("visit_plans")
       .select("week_start, status")
       .eq("salesperson_id", profile.id)
-      .gte("week_start", shiftWeek(weekStartOf(), -1)),
+      .gte("week_start", shiftWeek(currentWeekStart(), -1)),
     getEodReminder(),
     getPlanDeadline(),
   ]);

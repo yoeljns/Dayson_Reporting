@@ -21,7 +21,13 @@ import {
   type ComplaintOwnerDept,
   type DebtStatus,
 } from "@/lib/enums";
-import { formatTRDate, weekRangeLabel, weekStartOf, daysSince } from "@/lib/week";
+import {
+  formatTRDate,
+  weekRangeLabel,
+  weekStartOf,
+  currentWeekStart,
+  daysSince,
+} from "@/lib/week";
 import {
   ROW_CAP,
   COVERAGE_CAP,
@@ -599,7 +605,7 @@ export const buildKapsama: ReportBuilder = async (supabase, f, opts) => {
 // 6) Haftalık Plan Raporu — plans + items flattened
 // ---------------------------------------------------------------------------
 export const buildPlan: ReportBuilder = async (supabase, f, opts) => {
-  const start = f.start ? weekStartOf(parseISO(f.start)) : weekStartOf();
+  const start = f.start ? weekStartOf(parseISO(f.start)) : currentWeekStart();
   const end = f.end ? weekStartOf(parseISO(f.end)) : start;
 
   let q = supabase

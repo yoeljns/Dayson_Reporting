@@ -1124,4 +1124,26 @@ begin
   values (p_complaint_id, v_uid, v_from, p_to_status, p_note);
 end;
 $$;
+
+-- Atomic replace of a visit's answers (same pattern as replace_visit_products):
+-- a failed insert rolls back the delete, so prior answers are never wiped.
+-- SECURITY INVOKER → RLS still limits reps to their own visits.
+create or replace function replace_visit_answers(p_visit_id uuid, p_rows jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  delete from visit_answers where visit_id = p_visit_id;
+  insert into visit_answers (visit_id, question_id, value_text, value_number, value_date, value_detail)
+  select p_visit_id,
+         (r->>'question_id')::uuid,
+         nullif(r->>'value_text', ''),
+         (nullif(r->>'value_number', ''))::numeric,
+         (nullif(r->>'value_date', ''))::date,
+         nullif(r->>'value_detail', '')
+  from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r;
+end;
+$$;
 `;
