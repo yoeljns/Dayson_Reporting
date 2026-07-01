@@ -20,12 +20,17 @@ export default async function AdminHome() {
 
   const [openComplaints, todayVisits, totalDealers, observations] =
     await Promise.all([
-      count("complaints", (q) => q.in("status", ["acik", "islemde"])),
+      // Drafts default to status 'acik'; exclude them so counts reflect real work.
+      count("complaints", (q) =>
+        q.in("status", ["acik", "islemde"]).eq("is_draft", false)
+      ),
       count("visits", (q) =>
         q.eq("status", "tamamlandi").eq("visit_date", today).is("deleted_at", null)
       ),
-      count("companies", (q) => q.eq("kind", "distributor")),
-      count("competitor_observations"),
+      count("companies", (q) =>
+        q.eq("kind", "distributor").is("deleted_at", null)
+      ),
+      count("competitor_observations", (q) => q.eq("is_draft", false)),
     ]);
 
   const stats = [
@@ -43,6 +48,11 @@ export default async function AdminHome() {
     },
   ];
 
+  const quickActions = [
+    { label: "Yeni bayi ekle", href: "/admin/bayiler" },
+    { label: "Rapor al", href: "/admin/raporlar" },
+  ];
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Yönetim Özeti</h1>
@@ -57,6 +67,23 @@ export default async function AdminHome() {
             </Card>
           </Link>
         ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-sm font-medium text-muted-foreground">
+          Hızlı işlemler
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {quickActions.map((a) => (
+            <Link
+              key={a.href}
+              href={a.href}
+              className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              {a.label}
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );

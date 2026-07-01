@@ -13,6 +13,7 @@ import type { Profile } from "@/types/db";
 import {
   createUser,
   inviteUser,
+  updateUserName,
   updateUserRole,
   toggleUserActive,
 } from "@/app/(admin)/admin/kullanicilar/actions";
@@ -142,42 +143,95 @@ export function UserManager({ users }: { users: Profile[] }) {
 
       <div className="space-y-2">
         {users.map((u) => (
-          <Card key={u.id}>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
-              <div>
-                <div className="font-medium">
-                  {u.full_name || "(isimsiz)"}{" "}
-                  {!u.is_active && <Badge variant="secondary">Pasif</Badge>}
-                </div>
-                <div className="text-xs text-muted-foreground">{u.email}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Select
-                  value={u.role}
-                  onChange={(e) =>
-                    changeRole(u.id, e.target.value as UserRole)
-                  }
-                  className="h-9 w-auto"
-                >
-                  {USER_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {USER_ROLE_LABELS[r]}
-                    </option>
-                  ))}
-                </Select>
-                <Button
-                  variant={u.is_active ? "outline" : "default"}
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => toggle(u.id, !u.is_active)}
-                >
-                  {u.is_active ? "Pasifleştir" : "Aktifleştir"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <UserRow
+            key={u.id}
+            user={u}
+            pending={pending}
+            onChangeRole={changeRole}
+            onToggle={toggle}
+          />
         ))}
       </div>
     </div>
+  );
+}
+
+function UserRow({
+  user,
+  pending,
+  onChangeRole,
+  onToggle,
+}: {
+  user: Profile;
+  pending: boolean;
+  onChangeRole: (userId: string, r: UserRole) => void;
+  onToggle: (userId: string, isActive: boolean) => void;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState(user.full_name ?? "");
+  const [saving, startSave] = useTransition();
+  const [nameErr, setNameErr] = useState<string | null>(null);
+  const dirty = name.trim() !== (user.full_name ?? "").trim();
+
+  function saveName() {
+    setNameErr(null);
+    if (!name.trim()) {
+      setNameErr("Ad Soyad zorunludur.");
+      return;
+    }
+    startSave(async () => {
+      const res = await updateUserName({ userId: user.id, fullName: name });
+      if (res.error) {
+        setNameErr(res.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ad Soyad"
+              className="h-9 max-w-[16rem]"
+            />
+            {dirty && (
+              <Button size="sm" disabled={saving} onClick={saveName}>
+                Kaydet
+              </Button>
+            )}
+            {!user.is_active && <Badge variant="secondary">Pasif</Badge>}
+          </div>
+          <div className="text-xs text-muted-foreground">{user.email}</div>
+          {nameErr && <p className="text-xs text-destructive">{nameErr}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={user.role}
+            onChange={(e) => onChangeRole(user.id, e.target.value as UserRole)}
+            className="h-9 w-auto"
+          >
+            {USER_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {USER_ROLE_LABELS[r]}
+              </option>
+            ))}
+          </Select>
+          <Button
+            variant={user.is_active ? "outline" : "default"}
+            size="sm"
+            disabled={pending}
+            onClick={() => onToggle(user.id, !user.is_active)}
+          >
+            {user.is_active ? "Pasifleştir" : "Aktifleştir"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

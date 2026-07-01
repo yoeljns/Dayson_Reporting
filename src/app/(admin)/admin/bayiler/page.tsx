@@ -1,9 +1,10 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DealerManager } from "@/components/dealer-manager";
+import { DealerCreateForm } from "@/components/dealer-create-form";
 
 export default async function DealersPage() {
-  await requireAdmin();
+  await requireManager();
   const admin = createAdminClient();
 
   const [{ data: companies }, { data: assignments }, { data: profiles }] =
@@ -32,13 +33,14 @@ export default async function DealersPage() {
     assignedTo: assignMap.get(c.id) ?? null,
   }));
 
+  const salespeople =
+    (profiles as { id: string; full_name: string }[]) ?? [];
+
   return (
     <div className="max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Bayiler</h1>
-      <DealerManager
-        dealers={dealers}
-        salespeople={(profiles as { id: string; full_name: string }[]) ?? []}
-      />
+      <DealerCreateForm salespeople={salespeople} />
+      <DealerManager dealers={dealers} salespeople={salespeople} />
     </div>
   );
 }

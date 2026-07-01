@@ -79,6 +79,24 @@ export async function createUser(input: {
   return { ok: true };
 }
 
+export async function updateUserName(input: {
+  userId: string;
+  fullName: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin();
+  const fullName = input.fullName.trim();
+  if (!fullName) return { error: "Ad Soyad zorunludur." };
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("profiles")
+    .update({ full_name: fullName })
+    .eq("id", input.userId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/kullanicilar");
+  return { ok: true };
+}
+
 export async function updateUserRole(input: {
   userId: string;
   role: UserRole;
