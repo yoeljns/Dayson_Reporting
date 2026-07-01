@@ -87,6 +87,7 @@ export function VisitWizard({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [autosaveWarn, setAutosaveWarn] = useState(false);
   const [step, setStep] = useState(0);
 
   const byCode = useMemo(() => {
@@ -302,19 +303,9 @@ export function VisitWizard({
       }
     }
     startTransition(async () => {
-      const p1 = await saveVisitProducts({
-        visitId,
-        selections: buildProductSelections(),
-      });
-      if (p1.error) return setError(p1.error);
-      const p2 = await setVisitContact({ visitId, contactId });
-      if (p2.error) return setError(p2.error);
-      const p3 = await saveVisit({
-        visitId,
-        answers: buildAnswers(),
-        complete,
-      });
-      if (p3.error) return setError(p3.error);
+      const err = await saveAll(complete);
+      if (err) return setError(err);
+      setAutosaveWarn(false);
       if (complete) {
         router.push("/");
         router.refresh();
@@ -322,6 +313,37 @@ export function VisitWizard({
         router.refresh();
       }
     });
+  }
+
+  /** Save everything; returns an error message or null. Never throws — a
+   *  dropped connection must not silently escape startTransition. */
+  async function saveAll(complete: boolean): Promise<string | null> {
+    try {
+      const p1 = await saveVisitProducts({
+        visitId,
+        selections: buildProductSelections(),
+      });
+      if (p1.error) return p1.error;
+      const p2 = await setVisitContact({ visitId, contactId });
+      if (p2.error) return p2.error;
+      const p3 = await saveVisit({
+        visitId,
+        answers: buildAnswers(),
+        complete,
+      });
+      if (p3.error) return p3.error;
+      return null;
+    } catch {
+      return "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin. Girdikleriniz bu ekranda duruyor.";
+    }
+  }
+
+  /** Advance a step and autosave in the background, so a killed PWA or dead
+   *  battery doesn't lose everything typed so far. */
+  function goNext() {
+    setStep((s) => Math.min(total - 1, s + 1));
+    if (!isOwner) return;
+    void saveAll(false).then((err) => setAutosaveWarn(err != null));
   }
 
   const isLast = step >= total - 1;
@@ -609,6 +631,13 @@ export function VisitWizard({
         </p>
       )}
 
+      {autosaveWarn && (
+        <p className="text-xs text-amber-600">
+          Otomatik kayıt başarısız — bağlantınızı kontrol edin. Cevaplarınız bu
+          ekranda duruyor; bağlantı gelince tekrar kaydedilir.
+        </p>
+      )}
+
       {/* Navigation */}
       <div className="flex items-center gap-2">
         <Button
@@ -639,11 +668,7 @@ export function VisitWizard({
             </Button>
           )
         ) : (
-          <Button
-            className="ml-auto"
-            disabled={pending}
-            onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
-          >
+          <Button className="ml-auto" disabled={pending} onClick={goNext}>
             İleri <ArrowRight className="ml-1 h-4 w-4" />
           </Button>
         )}

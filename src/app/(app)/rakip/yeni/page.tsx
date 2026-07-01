@@ -108,31 +108,37 @@ function NewCompetitorObservationForm() {
       return;
     }
     startTransition(async () => {
-      const res = await saveObservation({
-        id: editId,
-        competitorId: competitor.id,
-        companyId: company?.id ?? null,
-        visitId,
-        productName,
-        observedPrice: price === "" ? null : Number(price),
-        city: city || null,
-        note: note || null,
-        isDraft,
-      });
-      if (res.error || !res.id) {
-        setError(res.error ?? "Kaydedilemedi.");
-        return;
+      try {
+        const res = await saveObservation({
+          id: editId,
+          competitorId: competitor.id,
+          companyId: company?.id ?? null,
+          visitId,
+          productName,
+          observedPrice: price === "" ? null : Number(price),
+          city: city || null,
+          note: note || null,
+          isDraft,
+        });
+        if (res.error || !res.id) {
+          setError(res.error ?? "Kaydedilemedi.");
+          return;
+        }
+        // Drafts and resumed records go back to the list; a fresh finalize
+        // stays so the rep can log another observation quickly.
+        if (isDraft || editId) {
+          router.push("/rakip");
+          return;
+        }
+        setSuccess(true);
+        setProductName("");
+        setPrice("");
+        setNote("");
+      } catch {
+        setError(
+          "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
+        );
       }
-      // Drafts and resumed records go back to the list; a fresh finalize stays
-      // so the rep can log another observation quickly.
-      if (isDraft || editId) {
-        router.push("/rakip");
-        return;
-      }
-      setSuccess(true);
-      setProductName("");
-      setPrice("");
-      setNote("");
     });
   }
 

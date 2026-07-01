@@ -137,24 +137,30 @@ function NewComplaintForm() {
       }
     }
     startTransition(async () => {
-      const res = await saveComplaint({
-        id: editId,
-        companyId: company?.id ?? null,
-        complainantName: complainantName || null,
-        complainantPhone: complainantPhone || null,
-        visitId,
-        type,
-        productCategoryId: productCategoryId || null,
-        description,
-        priority,
-        dueDate: dueDate || null,
-        isDraft,
-      });
-      if (res.error || !res.id) {
-        setError(res.error ?? "Şikayet kaydedilemedi.");
-        return;
+      try {
+        const res = await saveComplaint({
+          id: editId,
+          companyId: company?.id ?? null,
+          complainantName: complainantName || null,
+          complainantPhone: complainantPhone || null,
+          visitId,
+          type,
+          productCategoryId: productCategoryId || null,
+          description,
+          priority,
+          dueDate: dueDate || null,
+          isDraft,
+        });
+        if (res.error || !res.id) {
+          setError(res.error ?? "Şikayet kaydedilemedi.");
+          return;
+        }
+        router.push(isDraft ? "/sikayetler" : `/sikayet/${res.id}`);
+      } catch {
+        setError(
+          "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
+        );
       }
-      router.push(isDraft ? "/sikayetler" : `/sikayet/${res.id}`);
     });
   }
 
