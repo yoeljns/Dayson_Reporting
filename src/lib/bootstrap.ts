@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Client } from "pg";
 import { SCHEMA_SQL, SEED_SQL, PATCH_SQL } from "@/lib/schema-sql";
 
@@ -82,11 +83,34 @@ async function runEnsureSchema(): Promise<boolean> {
       }
     }
 
-    // Apply idempotent additive patches every boot so existing DBs stay current.
+    // Apply idempotent patches only when the bundled PATCH_SQL changed since
+    // the last successful run: the whole blob (~25KB of DDL) used to replay on
+    // every cold start. The recorded hash lives in app_settings; the read
+    // fails harmlessly on DBs that predate that table, forcing a full run.
+    const patchHash = createHash("sha256").update(PATCH_SQL).digest("hex");
+    let upToDate = false;
     try {
-      await client.query(PATCH_SQL);
-    } catch (patchErr) {
-      console.error("[bootstrap] Patch uygulanamadı:", patchErr);
+      const { rows: ver } = await client.query(
+        "select value->>'hash' as hash from app_settings where key = 'schema_patch_hash'"
+      );
+      upToDate = ver[0]?.hash === patchHash;
+    } catch {
+      /* app_settings not there yet → run the patch */
+    }
+    if (!upToDate) {
+      try {
+        // Advisory lock serializes concurrent cold starts; the hash upsert is
+        // part of the same implicit transaction, so a failed patch never
+        // records itself as applied.
+        await client.query(
+          `select pg_advisory_xact_lock(872764183);\n${PATCH_SQL}\n` +
+            `insert into app_settings (key, value) values ` +
+            `('schema_patch_hash', jsonb_build_object('hash', '${patchHash}')) ` +
+            `on conflict (key) do update set value = excluded.value, updated_at = now();`
+        );
+      } catch (patchErr) {
+        console.error("[bootstrap] Patch uygulanamadı:", patchErr);
+      }
     }
     return true;
   } catch (err) {

@@ -1,6 +1,7 @@
 // AUTO-GENERATED from supabase/migrations/*.sql — do not edit by hand.
-// Regenerate after changing the migrations. Bundled so the runtime migrator
-// (src/lib/bootstrap.ts) can apply the schema without filesystem access.
+// Regenerate with `npm run gen:schema` after changing the migrations. Bundled
+// so the runtime migrator (src/lib/bootstrap.ts) can apply the schema without
+// filesystem access.
 
 export const SCHEMA_SQL = `-- ============================================================================
 -- Dayson Reporting — initial schema
@@ -519,9 +520,8 @@ where q.code = 'sonraki_aksiyon'
 -- placeholder rows are seeded here.
 `;
 
-// Idempotent patches applied on every boot (ALTER ... IF NOT EXISTS etc.),
-// so existing databases pick up additive schema changes.
-export const PATCH_SQL = `-- ============================================================================
+export const PATCH_SQL = `-- ────── 0003_complainant.sql ──────
+-- ============================================================================
 -- Patch: complaints can be raised by someone NOT registered in the system,
 -- optionally linked to one of our distributors.
 -- Idempotent — safe to run on every boot (handled by the runtime bootstrap).
@@ -533,6 +533,7 @@ alter table complaints add column if not exists complainant_phone text;
 -- The distributor link is optional now (the complainant may be external).
 alter table complaints alter column company_id drop not null;
 
+-- ────── 0004_competitor_insert.sql ──────
 -- ============================================================================
 -- Let salespeople add competitors on the fly from the field, and remove the
 -- placeholder "Rakip A/B/C" seed rows (only if unused).
@@ -549,6 +550,7 @@ delete from competitors c
      select 1 from competitor_observations o where o.competitor_id = c.id
    );
 
+-- ────── 0005_soft_delete.sql ──────
 -- ============================================================================
 -- Soft-delete (archive) for visits (drafts) and companies, so "deleted" items
 -- are hidden from lists but kept on record and never break linked reports.
@@ -560,22 +562,34 @@ alter table visits add column if not exists deleted_by uuid references profiles(
 
 alter table companies add column if not exists deleted_at timestamptz;
 
+-- ────── 0006_visit_plans.sql ──────
 -- ============================================================================
 -- Weekly visit plans (haftalık ziyaret planı) + last-visit reporting view.
--- A salesperson plans the companies to visit in a given week, then submits it;
--- following weeks can be planned independently. company_last_visit feeds the
--- "son ziyaret tarihi" screens (security_invoker => caller's RLS applies).
--- Idempotent — applied on every boot by the runtime bootstrap.
+--
+-- A salesperson builds a plan for a given week (Monday-anchored), adds the
+-- companies they intend to visit, optionally pins a day / visit type / note,
+-- then submits it. Plans for following weeks can be created independently.
+--
+-- The company_last_visit view feeds the "son ziyaret tarihi" screens for both
+-- salespeople (their own customers) and managers (everyone). It is declared
+-- security_invoker so the underlying RLS on \`visits\` applies to the caller.
+--
+-- Idempotent — also bundled into PATCH_SQL so existing deployments pick it up
+-- on the next boot.
 -- ============================================================================
 
+-- Plan status enum (guarded create so re-runs are safe).
 do $$ begin
   create type plan_status as enum ('taslak','gonderildi');
 exception when duplicate_object then null; end $$;
 
+-- ---------------------------------------------------------------------------
+-- visit_plans — one row per (salesperson, week).
+-- ---------------------------------------------------------------------------
 create table if not exists visit_plans (
   id             uuid primary key default gen_random_uuid(),
   salesperson_id uuid not null references profiles(id) on delete cascade,
-  week_start     date not null,
+  week_start     date not null,                       -- Monday of the ISO week
   status         plan_status not null default 'taslak',
   note           text,
   submitted_at   timestamptz,
@@ -585,18 +599,24 @@ create table if not exists visit_plans (
 );
 create index if not exists idx_visit_plans_sp on visit_plans(salesperson_id, week_start);
 
+-- ---------------------------------------------------------------------------
+-- visit_plan_items — companies planned within a plan.
+-- ---------------------------------------------------------------------------
 create table if not exists visit_plan_items (
   id           uuid primary key default gen_random_uuid(),
   plan_id      uuid not null references visit_plans(id) on delete cascade,
   company_id   uuid not null references companies(id),
-  planned_date date,
-  visit_type   visit_type,
+  planned_date date,                                  -- a specific day in the week (optional)
+  visit_type   visit_type,                            -- planned visit kind (optional)
   note         text,
   created_at   timestamptz not null default now(),
   unique (plan_id, company_id)
 );
 create index if not exists idx_visit_plan_items_plan on visit_plan_items(plan_id);
 
+-- ---------------------------------------------------------------------------
+-- RLS — salesperson owns their plans; managers read all.
+-- ---------------------------------------------------------------------------
 alter table visit_plans      enable row level security;
 alter table visit_plan_items enable row level security;
 
@@ -613,6 +633,7 @@ drop policy if exists visit_plans_delete_own on visit_plans;
 create policy visit_plans_delete_own on visit_plans for delete
   using (salesperson_id = auth.uid());
 
+-- visit_plan_items inherit plan ownership (managers may read).
 drop policy if exists vplan_items_select on visit_plan_items;
 create policy vplan_items_select on visit_plan_items for select
   using (exists (
@@ -631,6 +652,11 @@ create policy vplan_items_write on visit_plan_items for all
     where p.id = visit_plan_items.plan_id and p.salesperson_id = auth.uid()
   ));
 
+-- ---------------------------------------------------------------------------
+-- company_last_visit — last completed visit per company.
+-- security_invoker => underlying RLS on \`visits\` applies to the caller, so a
+-- salesperson sees only their own customers' history, a manager sees all.
+-- ---------------------------------------------------------------------------
 create or replace view company_last_visit
 with (security_invoker = on) as
   select company_id,
@@ -641,9 +667,15 @@ with (security_invoker = on) as
      and deleted_at is null
    group by company_id;
 
+-- ────── 0007_app_settings.sql ──────
 -- ============================================================================
--- app_settings — admin-tunable key/value config (e.g. end-of-day reminder time).
--- Everyone signed in reads; only admins write. Idempotent.
+-- app_settings — small key/value store for admin-tunable app configuration.
+-- First use: the end-of-day "tamamlanmamış raporları bitir" reminder time.
+--
+-- Everyone signed in may read settings (the salesperson app needs the reminder
+-- time); only admins may change them.
+--
+-- Idempotent — also bundled into PATCH_SQL so existing deployments pick it up.
 -- ============================================================================
 
 create table if not exists app_settings (
@@ -663,19 +695,33 @@ drop policy if exists app_settings_admin_write on app_settings;
 create policy app_settings_admin_write on app_settings for all
   using (is_admin()) with check (is_admin());
 
+-- Seed the end-of-day reminder default (18:00, on). do-nothing on conflict so
+-- an admin's later change is never overwritten on boot.
 insert into app_settings (key, value)
 values ('eod_reminder', '{"enabled": true, "hour": 18, "minute": 0}'::jsonb)
 on conflict (key) do nothing;
 
+-- Weekly plan-submission deadline default: Monday (weekday 0) 09:00.
 insert into app_settings (key, value)
 values ('plan_deadline', '{"enabled": true, "weekday": 0, "hour": 9, "minute": 0}'::jsonb)
 on conflict (key) do nothing;
 
+-- ────── 0008_products_contacts.sql ──────
 -- ============================================================================
 -- Visit wizard support: remembered contacts, company-kind-scoped questions,
--- and the product/brand competition matrix. Idempotent — applied every boot.
+-- and the product/brand competition matrix.
+--
+-- New question_input_type values are intentionally NOT added (ALTER TYPE ADD
+-- VALUE is unsafe to use within the same boot transaction). The new steps use
+-- dedicated tables + a company_kind filter + a text/check column instead.
+--
+-- Idempotent — also bundled into PATCH_SQL so existing deployments pick it up.
 -- ============================================================================
 
+-- ---------------------------------------------------------------------------
+-- company_contacts — a person met at a company (name + phone [+ role]).
+-- Remembered per company and suggested on the next visit.
+-- ---------------------------------------------------------------------------
 create table if not exists company_contacts (
   id         uuid primary key default gen_random_uuid(),
   company_id uuid not null references companies(id) on delete cascade,
@@ -713,9 +759,16 @@ drop policy if exists company_contacts_update_own on company_contacts;
 create policy company_contacts_update_own on company_contacts for update
   using (created_by = auth.uid()) with check (created_by = auth.uid());
 
+-- Visit -> chosen contact for that visit.
 alter table visits add column if not exists contact_id uuid references company_contacts(id);
+
+-- Company-kind-scoped questions (e.g. HİZ.VEREN.BAYİ only for non_customer).
+-- null = applies to all kinds.
 alter table questions add column if not exists applies_to_kind company_kind[];
 
+-- ---------------------------------------------------------------------------
+-- Product competition matrix: categories × brands, and per-visit answers.
+-- ---------------------------------------------------------------------------
 create table if not exists product_categories (
   id         uuid primary key default gen_random_uuid(),
   code       text unique not null,
@@ -733,8 +786,11 @@ create table if not exists product_brands (
   created_by uuid references profiles(id),
   created_at timestamptz not null default now()
 );
+-- Case-insensitive uniqueness so "3M" / "3m" don't duplicate.
 create unique index if not exists uq_product_brands_name on product_brands(lower(name));
 
+-- Which brands appear as options for a category. salesperson_id null = global
+-- (admin-seeded); non-null = a rep's own "Diğer" addition (suggested to them).
 create table if not exists product_category_brands (
   id             uuid primary key default gen_random_uuid(),
   category_id    uuid not null references product_categories(id) on delete cascade,
@@ -762,6 +818,8 @@ create table if not exists visit_product_answers (
 );
 create index if not exists idx_vpa_visit on visit_product_answers(visit_id);
 
+-- RLS: catalogs are readable by all authenticated; admins manage; salespeople
+-- may add brands + their own category links (the "Diğer" flow).
 alter table product_categories      enable row level security;
 alter table product_brands          enable row level security;
 alter table product_category_brands enable row level security;
@@ -811,6 +869,9 @@ create policy vpa_write on visit_product_answers for all
     and v.salesperson_id = auth.uid()
   ));
 
+-- ---------------------------------------------------------------------------
+-- Seed: HİZ.VEREN.BAYİ question (non_customer only) + notes label + matrix.
+-- ---------------------------------------------------------------------------
 insert into questions (code, label_tr, input_type, applies_to, applies_to_kind, is_required, sort_order)
 values ('hiz_veren_bayi', 'Hizmet veren bayi', 'text', null, array['non_customer']::company_kind[], false, 75)
 on conflict (code) do nothing;
@@ -818,6 +879,7 @@ on conflict (code) do nothing;
 update questions set label_tr = 'Ziyaret notları'
  where code = 'serbest_not' and label_tr = 'Serbest not';
 
+-- Product categories (order matters).
 insert into product_categories (code, label_tr, sort_order) values
   ('pu',        'PU (Poliüretan Köpük)',        10),
   ('sos',       'Sosis',                        20),
@@ -831,6 +893,7 @@ insert into product_categories (code, label_tr, sort_order) values
   ('su_kuru',   'Su / Kuru Zımpara',            100)
 on conflict (code) do nothing;
 
+-- Brand catalog.
 insert into product_brands (name) values
   ('Dayson'),('Selsil'),('Soudal'),('Akfix'),('Somafix'),('Akkim'),('Den Braven'),
   ('Penosil'),('Tytan'),('VEGE'),('3M'),('Tesa'),('Beorol'),('Hasbant'),('Nora Bant'),
@@ -838,9 +901,12 @@ insert into product_brands (name) values
   ('Kovax'),('Klingspor'),('SIA'),('Bosch'),('Indasa'),('Norton'),('Deerfos'),('Starcke')
 on conflict (lower(name)) do nothing;
 
+-- Global category↔brand links (own = is_own true). Idempotent via the partial
+-- unique index (category_id, brand_id) where salesperson_id is null.
 insert into product_category_brands (category_id, brand_id, is_own, sort_order)
 select c.id, b.id, v.is_own, v.sort_order
 from (values
+  -- category_code, brand_name, is_own, sort
   ('pu','Dayson',true,1),('pu','Selsil',false,2),('pu','Soudal',false,3),('pu','Akfix',false,4),
   ('pu','Somafix',false,5),('pu','Akkim',false,6),('pu','Den Braven',false,7),('pu','Penosil',false,8),
   ('sos','Dayson',true,1),('sos','Selsil',false,2),('sos','Soudal',false,3),('sos','Akfix',false,4),
@@ -869,6 +935,8 @@ join product_categories c on c.code = v.cat_code
 join product_brands b on lower(b.name) = lower(v.brand_name)
 on conflict do nothing;
 
+-- Atomically replace a visit's product-competition answers (delete + insert in
+-- one transaction). security invoker so the caller's RLS still applies.
 create or replace function replace_visit_products(p_visit_id uuid, p_rows jsonb)
 returns void
 language plpgsql
@@ -887,16 +955,19 @@ begin
 end;
 $$;
 
--- Complaint → which product it is about (from our catalog).
+-- ────── 0009_complaint_product_cleanup.sql ──────
+-- ============================================================================
+-- Complaint → product link + one-time catalog cleanup.
+-- Idempotent — also bundled into PATCH_SQL.
+-- ============================================================================
+
 alter table complaints add column if not exists product_category_id uuid references product_categories(id);
 
--- Mark the "next visit date" question label as optional.
 update questions set label_tr = 'Sonraki ziyaret tarihi (opsiyonel)'
  where code = 'sonraki_ziyaret_tarihi' and label_tr = 'Sonraki ziyaret tarihi';
 
--- One-time catalog cleanup (guarded so it never overrides later admin choices):
--- hide the satisfaction + contact-role questions and deactivate the brands the
--- admin asked to remove.
+-- One-time cleanup (guarded so it never overrides later admin choices): hide the
+-- satisfaction + contact-role questions and deactivate the removed brands.
 do $$ begin
   if not exists (select 1 from app_settings where key = 'catalog_cleanup_v1') then
     update questions set is_active = false
@@ -910,20 +981,29 @@ do $$ begin
   end if;
 end $$;
 
--- Free-text detail captured when a select answer is "diger" (Diğer).
+-- ────── 0010_answer_detail.sql ──────
+-- ============================================================================
+-- Free-text detail for "Diğer" answers + relabel a sonraki_aksiyon option.
+-- Idempotent — also bundled into PATCH_SQL.
+-- ============================================================================
+
+-- Detail text captured when a select answer is "diger" (Diğer).
 alter table visit_answers add column if not exists value_detail text;
 
--- "Aksiyon yok" → "Takip" (keep value 'aksiyon_yok' so past answers survive).
+-- "Aksiyon yok" → "Takip" (keep the value 'aksiyon_yok' so past answers survive).
 update question_options o set label_tr = 'Takip'
 from questions q
 where o.question_id = q.id and q.code = 'sonraki_aksiyon'
   and o.value = 'aksiyon_yok' and o.label_tr = 'Aksiyon yok';
 
+-- ────── 0011_products_restructure.sql ──────
 -- ============================================================================
--- Product matrix restructure: PU, Extra PU, Tixo, single Maskeleme Bandı (our
--- 6 tape types as options + masking competitors), Soft, Cırt, Su/Kuru; retire
--- the length-based masking + Sosis / Koli Bandı / Korniş. Idempotent.
+-- Product matrix restructure: PU, Extra PU, Tixo, single Maskeleme Bandı (with
+-- our 6 tape types as options), Soft, Cırt, Su/Kuru. The length-based masking
+-- categories and Sosis / Koli Bandı / Korniş are retired.
+-- Idempotent — also bundled into PATCH_SQL.
 -- ============================================================================
+
 insert into product_categories (code, label_tr, sort_order) values
   ('extra_pu',  'Extra PU',        15),
   ('tixo',      'Tixo',            18),
@@ -949,6 +1029,7 @@ join product_categories c on c.code = v.cat_code
 join product_brands b on lower(b.name) = lower(v.brand_name)
 on conflict do nothing;
 
+-- Retire the old categories (guarded once so admin choices aren't overridden).
 do $$ begin
   if not exists (select 1 from app_settings where key = 'catalog_restructure_v1') then
     update product_categories set is_active = false
@@ -958,17 +1039,22 @@ do $$ begin
   end if;
 end $$;
 
+-- ────── 0012_drafts.sql ──────
 -- ============================================================================
--- Drafts: complaints and competitor observations can be saved incomplete
--- ("Taslak kaydet") and finalized later. Drafts stay private to the reporter
--- and are excluded from manager queues and reports. Idempotent.
+-- Drafts for complaints and competitor observations. A "Taslak kaydet" button
+-- saves an incomplete record; it can be resumed and finalized later. Drafts are
+-- private to the reporter and excluded from manager queues + reports.
+-- Idempotent — also bundled into PATCH_SQL.
 -- ============================================================================
+
 alter table complaints              add column if not exists is_draft boolean not null default false;
 alter table competitor_observations add column if not exists is_draft boolean not null default false;
 
--- Reporters may finalize/edit their OWN draft complaints. The WITH CHECK pins
+-- Reporters may finalize/edit their OWN draft complaints. Once is_draft flips to
+-- false the USING clause no longer matches, so a finalized complaint can only be
+-- changed by a manager (or the status RPC) — same as before. The WITH CHECK pins
 -- the workflow columns to safe defaults so finalization only flips is_draft and
--- cannot forge a resolved/assigned state or bypass the status RPC.
+-- cannot forge a resolved/assigned state or bypass update_complaint_status.
 drop policy if exists complaints_update_own_draft on complaints;
 create policy complaints_update_own_draft on complaints for update
   using (reported_by = auth.uid() and is_draft)
@@ -993,22 +1079,30 @@ create policy cevents_insert_reporter on complaint_events for insert
     )
   );
 
+-- ────── 0013_pu_only.sql ──────
 -- ============================================================================
--- Merge only the PU-family mastics (PU, Extra PU, Tixo) into a single "PU mastik"
--- category. Bands (Maskeleme) and sandpapers (Soft, Cırt, Su/Kuru) STAY active.
--- Guarded once (catalog_pu_only_v1) so later admin edits are not overridden.
+-- Merge only the PU-family mastics (PU, Extra PU, Tixo) into a single
+-- "PU mastik" category. Bands (Maskeleme Bandı) and sandpapers (Soft,
+-- Cırt Zımpara, Su/Kuru) STAY active. Guarded once via
+-- app_settings.catalog_pu_only_v1. Idempotent — also in PATCH_SQL.
 -- ============================================================================
 do $$ begin
   if not exists (select 1 from app_settings where key = 'catalog_pu_only_v1') then
-    update product_categories set is_active = false where code in ('extra_pu','tixo');
+    update product_categories set is_active = false where code in ('extra_pu', 'tixo');
     update product_categories set is_active = true, label_tr = 'PU mastik' where code = 'pu';
     insert into app_settings (key, value)
       values ('catalog_pu_only_v1', 'true'::jsonb) on conflict (key) do nothing;
   end if;
 end $$;
 
--- Repair for DBs where an earlier version of the block above wrongly deactivated
--- the bands + sandpapers: restore them (the PU-family stays merged into PU mastik).
+-- ────── 0014_restore_bands.sql ──────
+-- ============================================================================
+-- Repair migration. An earlier version of 0013 wrongly deactivated the bands
+-- and sandpapers along with the PU-family merge. Restore Maskeleme Bandı, Soft,
+-- Cırt Zımpara and Su/Kuru; the PU-family (Extra PU, Tixo) stays merged into the
+-- single "PU mastik" category. Guarded once via catalog_pu_bands_restore_v1.
+-- Idempotent — also in PATCH_SQL.
+-- ============================================================================
 do $$ begin
   if not exists (select 1 from app_settings where key = 'catalog_pu_bands_restore_v1') then
     update product_categories set is_active = true
@@ -1018,9 +1112,14 @@ do $$ begin
   end if;
 end $$;
 
--- Split masking back into 35/30/25 mt and restore Korniş / High Tack; the single
--- "Maskeleme Bandı" is retired. Runs AFTER the restore block above (which turns
--- 'maskeleme' back on). Guarded once (catalog_masking_split_v1).
+-- ────── 0015_masking_split.sql ──────
+-- ============================================================================
+-- Restore the length-based masking categories (Maskeleme Bandı 35/30/25 mt) and
+-- the Korniş / High Tack category; retire the single "Maskeleme Bandı". These
+-- rows were only deactivated by the earlier restructure, so flipping is_active
+-- back on brings their brand links along. Guarded once via
+-- app_settings.catalog_masking_split_v1. Idempotent — also in PATCH_SQL.
+-- ============================================================================
 do $$ begin
   if not exists (select 1 from app_settings where key = 'catalog_masking_split_v1') then
     update product_categories set is_active = true
@@ -1031,15 +1130,24 @@ do $$ begin
   end if;
 end $$;
 
+-- ────── 0016_security.sql ──────
 -- ============================================================================
--- Security hardening. (1) The signup trigger must not read the role from
--- raw_user_meta_data — that value is client-controlled, so a public signUp()
--- call could mint an admin. All trusted flows (createUser / inviteUser /
--- createFirstAdmin) set the real role via an UPDATE right after creation.
--- (2) update_complaint_status is SECURITY DEFINER (RLS does not apply inside),
--- so it must authorize in its body; it also gains a manager-only reopen path
--- and rejects drafts. Both are create-or-replace → idempotent.
+-- Security hardening. Idempotent — also bundled into PATCH_SQL.
+--
+-- (1) handle_new_user: stop reading the role from raw_user_meta_data. That
+--     value is client-controlled at signup, so a public anon-key signUp() call
+--     with options.data.role='admin' could mint an admin profile. Every trusted
+--     flow (createUser / inviteUser / createFirstAdmin) already sets the real
+--     role via a profiles UPDATE right after creating the auth user, so
+--     hardcoding 'salesperson' here breaks nothing.
+--     ALSO: disable public signups in Supabase Auth settings (dashboard).
+--
+-- (2) update_complaint_status: SECURITY DEFINER bypasses RLS, so the function
+--     body must authorize. Require manager OR reporter/assignee, reject drafts,
+--     and allow a manager-only reopen (cozuldu/iptal -> islemde) so closed
+--     complaints are no longer permanent dead ends.
 -- ============================================================================
+
 create or replace function handle_new_user()
 returns trigger
 language plpgsql
@@ -1125,9 +1233,15 @@ begin
 end;
 $$;
 
--- Atomic replace of a visit's answers (same pattern as replace_visit_products):
--- a failed insert rolls back the delete, so prior answers are never wiped.
--- SECURITY INVOKER → RLS still limits reps to their own visits.
+-- ────── 0017_atomic_answers.sql ──────
+-- ============================================================================
+-- Atomic replace of a visit's answers. saveVisit previously deleted all
+-- visit_answers rows and re-inserted them as two separate PostgREST calls; a
+-- failed insert (constraint violation, transient error) permanently wiped the
+-- visit's saved answers. Single-transaction RPC — same pattern as
+-- replace_visit_products. SECURITY INVOKER, so RLS still limits reps to their
+-- own visits. Idempotent — also bundled into PATCH_SQL.
+-- ============================================================================
 create or replace function replace_visit_answers(p_visit_id uuid, p_rows jsonb)
 returns void
 language plpgsql
