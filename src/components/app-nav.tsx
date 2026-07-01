@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   Swords,
   Shield,
+  LayoutDashboard,
   LogOut,
   UserCog,
 } from "lucide-react";
@@ -37,8 +38,22 @@ export function AppNav({
 
   const items = [
     ...navItems,
-    ...(isManager ? [{ href: "/admin", label: "Yönetim", icon: Shield }] : []),
+    ...(isManager
+      ? [
+          { href: "/admin/panel", label: "Panel", icon: LayoutDashboard },
+          { href: "/admin", label: "Yönetim", icon: Shield },
+        ]
+      : []),
   ];
+
+  // Highlight the single most specific match so /admin/panel lights up "Panel",
+  // not also "Yönetim" (whose href "/admin" is a prefix of it).
+  const activeHref = items
+    .map((i) => i.href)
+    .filter((h) =>
+      h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(h + "/")
+    )
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <>
@@ -71,10 +86,7 @@ export function AppNav({
       <nav className="hidden border-b bg-muted/30 sm:block">
         <div className="container flex gap-1 py-2">
           {items.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
+            const active = item.href === activeHref;
             return (
               <Link
                 key={item.href}
@@ -97,10 +109,7 @@ export function AppNav({
       {/* Mobile bottom nav — elevated & high-contrast for PWA (standalone) use */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex border-t-2 border-border bg-card pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_-6px_rgba(40,30,20,0.28)] sm:hidden">
         {items.map((item) => {
-          const active =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const active = item.href === activeHref;
           return (
             <Link
               key={item.href}
