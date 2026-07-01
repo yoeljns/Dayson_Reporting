@@ -2,11 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type {
-  ComplaintType,
-  ComplaintOwnerDept,
-  ComplaintStatus,
+import {
+  COMPLAINT_TYPE_LABELS,
+  type ComplaintType,
+  type ComplaintOwnerDept,
+  type ComplaintStatus,
 } from "@/lib/enums";
+
+// The department is auto-routed from the complaint type (the manual field was
+// removed from the form).
+const DEPT_BY_TYPE: Record<ComplaintType, ComplaintOwnerDept> = {
+  urun_hatasi: "kalite_uretim",
+  fiyat_fatura_hatasi: "muhasebe",
+  servis_hatasi: "satis",
+  teslimat: "lojistik",
+  diger: "satis",
+};
 
 export async function createComplaint(input: {
   companyId?: string | null;
@@ -14,8 +25,7 @@ export async function createComplaint(input: {
   complainantPhone?: string | null;
   visitId?: string | null;
   type: ComplaintType;
-  ownerDept: ComplaintOwnerDept;
-  title: string;
+  productCategoryId?: string | null;
   description: string;
   priority: number;
   dueDate?: string | null;
@@ -26,13 +36,27 @@ export async function createComplaint(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
 
-  if (!input.title.trim() || !input.description.trim()) {
-    return { error: "Başlık ve açıklama zorunludur." };
+  if (!input.description.trim()) {
+    return { error: "Açıklama zorunludur." };
   }
   // Need at least one way to identify who/what the complaint is about.
   if (!input.companyId && !input.complainantName?.trim()) {
     return { error: "Distribütör seçin ya da şikayet eden kişiyi yazın." };
   }
+
+  // Auto-generate a title from the type (+ product) — the title field was removed.
+  let productLabel: string | null = null;
+  if (input.productCategoryId) {
+    const { data: cat } = await supabase
+      .from("product_categories")
+      .select("label_tr")
+      .eq("id", input.productCategoryId)
+      .maybeSingle();
+    productLabel = (cat as { label_tr: string } | null)?.label_tr ?? null;
+  }
+  const title =
+    COMPLAINT_TYPE_LABELS[input.type] +
+    (productLabel ? ` – ${productLabel}` : "");
 
   const { data, error } = await supabase
     .from("complaints")
@@ -43,8 +67,9 @@ export async function createComplaint(input: {
       reported_by: user.id,
       visit_id: input.visitId || null,
       type: input.type,
-      owner_dept: input.ownerDept,
-      title: input.title.trim(),
+      product_category_id: input.productCategoryId || null,
+      owner_dept: DEPT_BY_TYPE[input.type] ?? "satis",
+      title,
       description: input.description.trim(),
       priority: input.priority,
       due_date: input.dueDate || null,

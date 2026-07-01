@@ -22,7 +22,8 @@ export default async function ProductCompetitionPage() {
       .order("sort_order"),
     admin
       .from("product_category_brands")
-      .select("id, category_id, brand_id, is_own, sort_order, product_brands(name)")
+      .select("id, category_id, brand_id, is_own, sort_order, product_brands!inner(name)")
+      .eq("product_brands.is_active", true)
       .is("salesperson_id", null),
   ]);
 

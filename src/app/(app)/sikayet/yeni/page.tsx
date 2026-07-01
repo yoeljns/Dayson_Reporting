@@ -13,12 +13,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   COMPLAINT_TYPES,
   COMPLAINT_TYPE_LABELS,
-  COMPLAINT_OWNER_DEPTS,
-  COMPLAINT_OWNER_DEPT_LABELS,
   COMPLAINT_PRIORITIES,
   COMPLAINT_PRIORITY_LABELS,
   type ComplaintType,
-  type ComplaintOwnerDept,
 } from "@/lib/enums";
 import { createComplaint } from "../actions";
 
@@ -40,14 +37,28 @@ function NewComplaintForm() {
   const [complainantName, setComplainantName] = useState("");
   const [complainantPhone, setComplainantPhone] = useState("");
   const [type, setType] = useState<ComplaintType>("urun_hatasi");
-  const [ownerDept, setOwnerDept] =
-    useState<ComplaintOwnerDept>("kalite_uretim");
-  const [title, setTitle] = useState("");
+  const [categories, setCategories] = useState<
+    { id: string; label_tr: string }[]
+  >([]);
+  const [productCategoryId, setProductCategoryId] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState(2);
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  // Product catalog for "hangi ürün".
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("product_categories")
+      .select("id, label_tr")
+      .eq("is_active", true)
+      .order("sort_order")
+      .then(({ data }) =>
+        setCategories((data as { id: string; label_tr: string }[]) ?? [])
+      );
+  }, []);
 
   // Preselect the company when arriving from a visit.
   useEffect(() => {
@@ -65,8 +76,12 @@ function NewComplaintForm() {
 
   function submit() {
     setError(null);
+    if (!description.trim()) {
+      setError("Açıklama zorunludur.");
+      return;
+    }
     if (!company && !complainantName.trim()) {
-      setError("Distribütör seçin ya da şikayet eden kişiyi yazın.");
+      setError("Şikayet eden kişiyi yazın ya da en altta distribütör seçin.");
       return;
     }
     startTransition(async () => {
@@ -76,8 +91,7 @@ function NewComplaintForm() {
         complainantPhone: complainantPhone || null,
         visitId,
         type,
-        ownerDept,
-        title,
+        productCategoryId: productCategoryId || null,
         description,
         priority,
         dueDate: dueDate || null,
@@ -111,14 +125,6 @@ function NewComplaintForm() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Bağlı distribütör (opsiyonel)</Label>
-            <CompanyPicker value={company} onChange={setCompany} />
-            <p className="text-xs text-muted-foreground">
-              Şikayet eden bir distribütörümüze bağlıysa seçin.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
             <Label htmlFor="type">Şikayet tipi *</Label>
             <Select
               id="type"
@@ -134,29 +140,19 @@ function NewComplaintForm() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="dept">İlgili departman *</Label>
+            <Label htmlFor="product">Hangi ürün (opsiyonel)</Label>
             <Select
-              id="dept"
-              value={ownerDept}
-              onChange={(e) =>
-                setOwnerDept(e.target.value as ComplaintOwnerDept)
-              }
+              id="product"
+              value={productCategoryId}
+              onChange={(e) => setProductCategoryId(e.target.value)}
             >
-              {COMPLAINT_OWNER_DEPTS.map((d) => (
-                <option key={d} value={d}>
-                  {COMPLAINT_OWNER_DEPT_LABELS[d]}
+              <option value="">— Seçiniz —</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label_tr}
                 </option>
               ))}
             </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="title">Başlık *</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
           </div>
 
           <div className="space-y-1.5">
@@ -193,6 +189,14 @@ function NewComplaintForm() {
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Bağlı distribütör (opsiyonel)</Label>
+            <CompanyPicker value={company} onChange={setCompany} minChars={3} />
+            <p className="text-xs text-muted-foreground">
+              Bağlıysa ilk 3 harfi yazıp distribütörü seçin.
+            </p>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

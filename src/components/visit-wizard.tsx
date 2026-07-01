@@ -2,7 +2,16 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Plus, UserPlus } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Plus,
+  UserPlus,
+  AlertTriangle,
+  Swords,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -32,6 +41,7 @@ export type CategoryOption = { id: string; label_tr: string; brands: BrandOption
 
 type CatSel = { brands: string[]; supply: "" | "own_production" | "export" };
 type StepDef =
+  | { kind: "addons" }
   | { kind: "question"; q: QuestionWithOptions }
   | { kind: "contact" }
   | { kind: "products" }
@@ -126,6 +136,7 @@ export function VisitWizard({
 
   const steps = useMemo<StepDef[]>(() => {
     const out: StepDef[] = [];
+    out.push({ kind: "addons" });
     const amac = byCode.get("ziyaret_amaci");
     if (amac) out.push({ kind: "question", q: amac });
     out.push({ kind: "contact" });
@@ -255,8 +266,16 @@ export function VisitWizard({
   function persist(complete: boolean) {
     setError(null);
     if (complete) {
+      // Only require questions actually shown in the wizard.
+      const rendered = new Set<string>();
+      for (const s of steps) if (s.kind === "question") rendered.add(s.q.id);
+      const sip = byCode.get("siparis_alindi");
+      if (sip && steps.some((s) => s.kind === "order")) rendered.add(sip.id);
       const missing = questions.find(
-        (q) => q.is_required && !(values[q.id] ?? "").toString().trim()
+        (q) =>
+          q.is_required &&
+          rendered.has(q.id) &&
+          !(values[q.id] ?? "").toString().trim()
       );
       if (missing) {
         setError(`"${missing.label_tr}" alanı zorunludur.`);
@@ -308,6 +327,29 @@ export function VisitWizard({
 
       <Card>
         <CardContent className="space-y-4 p-4">
+          {current?.kind === "addons" && (
+            <div className="space-y-3">
+              <Label>Bu ziyarete eklemek ister misin?</Label>
+              <p className="text-xs text-muted-foreground">
+                İstersen şimdi ekle; rapor boyunca en altta da ekleyebilirsin.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Link href={`/sikayet/yeni?company=${companyId}&visit=${visitId}`}>
+                  <Button variant="outline" className="h-16 w-full flex-col gap-1">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    Şikayet ekle
+                  </Button>
+                </Link>
+                <Link href={`/rakip/yeni?company=${companyId}&visit=${visitId}`}>
+                  <Button variant="outline" className="h-16 w-full flex-col gap-1">
+                    <Swords className="h-5 w-5 text-primary" />
+                    Rakip bilgisi
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
+
           {current?.kind === "question" && (
             <QuestionStep
               q={current.q}
@@ -490,14 +532,28 @@ export function VisitWizard({
                   <>
                     <div className="space-y-1.5">
                       <Label>{sip.label_tr}</Label>
-                      <Select
-                        value={sipVal}
-                        onChange={(e) => setVal(sip.id, e.target.value)}
-                      >
-                        <option value="">Seçiniz…</option>
-                        <option value="evet">Evet</option>
-                        <option value="hayir">Hayır</option>
-                      </Select>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { v: "evet", l: "Evet" },
+                          { v: "hayir", l: "Hayır" },
+                        ].map((o) => (
+                          <button
+                            key={o.v}
+                            type="button"
+                            onClick={() =>
+                              setVal(sip.id, sipVal === o.v ? "" : o.v)
+                            }
+                            className={cn(
+                              "rounded-md border px-3 py-3 text-sm font-medium",
+                              sipVal === o.v
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "hover:bg-accent"
+                            )}
+                          >
+                            {o.l}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     {neden && sipVal === "hayir" && (
                       <div className="space-y-1.5">
@@ -592,23 +648,47 @@ function QuestionStep({
         {q.is_required && <span className="text-destructive"> *</span>}
       </Label>
       {q.input_type === "boolean" && (
-        <Select id={q.id} value={value} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Seçiniz…</option>
-          <option value="evet">Evet</option>
-          <option value="hayir">Hayır</option>
-        </Select>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { v: "evet", l: "Evet" },
+            { v: "hayir", l: "Hayır" },
+          ].map((o) => (
+            <button
+              key={o.v}
+              type="button"
+              onClick={() => onChange(value === o.v ? "" : o.v)}
+              className={cn(
+                "rounded-md border px-3 py-3 text-sm font-medium",
+                value === o.v
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "hover:bg-accent"
+              )}
+            >
+              {o.l}
+            </button>
+          ))}
+        </div>
       )}
       {(q.input_type === "select" || q.input_type === "multiselect") && (
-        <Select id={q.id} value={value} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Seçiniz…</option>
+        <div className="flex flex-wrap gap-2">
           {[...q.question_options]
             .sort((a, b) => a.sort_order - b.sort_order)
             .map((o) => (
-              <option key={o.id} value={o.value}>
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => onChange(value === o.value ? "" : o.value)}
+                className={cn(
+                  "rounded-full border px-4 py-2 text-sm",
+                  value === o.value
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "hover:bg-accent"
+                )}
+              >
                 {o.label_tr}
-              </option>
+              </button>
             ))}
-        </Select>
+        </div>
       )}
       {q.input_type === "number" && (
         <Input

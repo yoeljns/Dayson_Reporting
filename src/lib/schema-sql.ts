@@ -886,4 +886,27 @@ begin
   from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r;
 end;
 $$;
+
+-- Complaint → which product it is about (from our catalog).
+alter table complaints add column if not exists product_category_id uuid references product_categories(id);
+
+-- Mark the "next visit date" question label as optional.
+update questions set label_tr = 'Sonraki ziyaret tarihi (opsiyonel)'
+ where code = 'sonraki_ziyaret_tarihi' and label_tr = 'Sonraki ziyaret tarihi';
+
+-- One-time catalog cleanup (guarded so it never overrides later admin choices):
+-- hide the satisfaction + contact-role questions and deactivate the brands the
+-- admin asked to remove.
+do $$ begin
+  if not exists (select 1 from app_settings where key = 'catalog_cleanup_v1') then
+    update questions set is_active = false
+      where code in ('genel_memnuniyet', 'gorusulen_kisi_rolu');
+    update product_brands set is_active = false
+      where lower(name) = any (array[
+        'den braven','penosil','3m','beorol','alfa bant','rulopak',
+        'bison','pattex','kovax','klingspor','deerfos','starcke']);
+    insert into app_settings (key, value)
+      values ('catalog_cleanup_v1', 'true'::jsonb) on conflict (key) do nothing;
+  end if;
+end $$;
 `;

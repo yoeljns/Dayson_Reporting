@@ -81,3 +81,40 @@ export async function toggleQuestionActive(input: {
   revalidatePath("/admin/sorular");
   return { ok: true };
 }
+
+/** Edit a question's label and required flag. */
+export async function editQuestion(input: {
+  questionId: string;
+  labelTr: string;
+  isRequired: boolean;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin();
+  if (!input.labelTr.trim()) return { error: "Soru metni zorunludur." };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("questions")
+    .update({ label_tr: input.labelTr.trim(), is_required: input.isRequired })
+    .eq("id", input.questionId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/sorular");
+  return { ok: true };
+}
+
+/** Delete a question (blocked by the FK if it already has answers). */
+export async function deleteQuestion(input: {
+  questionId: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("questions")
+    .delete()
+    .eq("id", input.questionId);
+  if (error)
+    return {
+      error:
+        "Silinemedi — bu soruya bağlı geçmiş cevaplar olabilir. Bunun yerine pasifleştirin.",
+    };
+  revalidatePath("/admin/sorular");
+  return { ok: true };
+}

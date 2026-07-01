@@ -184,6 +184,7 @@ export interface Complaint {
   complainant_phone: string | null;
   reported_by: string;
   visit_id: string | null;
+  product_category_id: string | null;
   type: ComplaintType;
   owner_dept: ComplaintOwnerDept;
   assignee_id: string | null;

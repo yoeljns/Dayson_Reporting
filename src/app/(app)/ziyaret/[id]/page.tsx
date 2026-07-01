@@ -92,7 +92,8 @@ export default async function VisitDetailPage({
       .order("sort_order"),
     supabase
       .from("product_category_brands")
-      .select("category_id, brand_id, is_own, sort_order, product_brands(name)")
+      .select("category_id, brand_id, is_own, sort_order, product_brands!inner(name)")
+      .eq("product_brands.is_active", true)
       // Global options ∪ the VISIT OWNER's custom brands (so a manager viewing
       // still sees the rep's "Diğer" additions).
       .or(

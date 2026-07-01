@@ -16,15 +16,26 @@ type Hit = Pick<
 export function CompanySearch({
   kind,
   onSelect,
+  minChars = 0,
 }: {
   kind: CompanyKind;
   onSelect: (company: Hit) => void;
+  /** Require at least this many characters before searching (0 = search all). */
+  minChars?: number;
 }) {
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const tooShort = term.trim().length < minChars;
+
   useEffect(() => {
+    // Below the threshold: don't query and don't dump the whole list.
+    if (term.trim().length < minChars) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
     const supabase = createClient();
     let cancelled = false;
     const t = setTimeout(async () => {
@@ -47,7 +58,7 @@ export function CompanySearch({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [term, kind]);
+  }, [term, kind, minChars]);
 
   return (
     <div className="space-y-3">
@@ -72,7 +83,12 @@ export function CompanySearch({
             Aranıyor…
           </p>
         )}
-        {!loading && results.length === 0 && (
+        {!loading && tooShort && (
+          <p className="py-2 text-center text-sm text-muted-foreground">
+            Aramak için en az {minChars} harf girin.
+          </p>
+        )}
+        {!loading && !tooShort && results.length === 0 && (
           <p className="py-2 text-center text-sm text-muted-foreground">
             Sonuç bulunamadı.
           </p>

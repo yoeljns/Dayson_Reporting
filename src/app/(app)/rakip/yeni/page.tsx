@@ -123,7 +123,12 @@ function NewCompetitorObservationForm() {
 
           <div className="space-y-1.5">
             <Label>Nerede görüldü (firma)</Label>
-            <CompanyPicker value={company} onChange={setCompany} />
+            <CompanyPicker
+              value={company}
+              onChange={setCompany}
+              minChars={3}
+              allowCreate
+            />
           </div>
 
           <div className="space-y-1.5">

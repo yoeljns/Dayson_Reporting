@@ -2,17 +2,20 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmButton } from "@/components/confirm-button";
 import type { QuestionInputType, QuestionWithOptions } from "@/types/db";
 import {
   addQuestion,
   toggleQuestionActive,
+  editQuestion,
+  deleteQuestion,
 } from "@/app/(admin)/admin/sorular/actions";
 
 const TYPE_LABELS: Record<QuestionInputType, string> = {
@@ -64,6 +67,35 @@ export function QuestionManager({
   function toggle(id: string, active: boolean) {
     startTransition(async () => {
       await toggleQuestionActive({ questionId: id, isActive: active });
+      router.refresh();
+    });
+  }
+
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editReq, setEditReq] = useState(true);
+
+  function startEdit(q: QuestionWithOptions) {
+    setEditing(q.id);
+    setEditLabel(q.label_tr);
+    setEditReq(q.is_required);
+  }
+  function saveEdit(id: string) {
+    startTransition(async () => {
+      const res = await editQuestion({
+        questionId: id,
+        labelTr: editLabel,
+        isRequired: editReq,
+      });
+      if (res.error) return setErr(res.error);
+      setEditing(null);
+      router.refresh();
+    });
+  }
+  function remove(id: string) {
+    startTransition(async () => {
+      const res = await deleteQuestion({ questionId: id });
+      if (res.error) return setErr(res.error);
       router.refresh();
     });
   }
@@ -183,29 +215,87 @@ export function QuestionManager({
       <div className="space-y-2">
         {questions.map((q) => (
           <Card key={q.id}>
-            <CardContent className="flex items-start justify-between gap-3 p-3">
-              <div>
-                <div className="font-medium">
-                  {q.label_tr}{" "}
-                  {!q.is_active && <Badge variant="secondary">Pasif</Badge>}{" "}
-                  {q.is_required && <Badge variant="outline">Zorunlu</Badge>}
+            <CardContent className="space-y-2 p-3">
+              {editing === q.id ? (
+                <div className="space-y-2">
+                  <Input
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                  />
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editReq}
+                      onChange={(e) => setEditReq(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    Zorunlu alan
+                  </label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditing(null)}
+                    >
+                      Vazgeç
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => saveEdit(q.id)}
+                    >
+                      Kaydet
+                    </Button>
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {q.code} · {TYPE_LABELS[q.input_type]}
-                  {q.question_options.length > 0 &&
-                    ` · ${q.question_options
-                      .map((o) => o.label_tr)
-                      .join(", ")}`}
+              ) : (
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">
+                      {q.label_tr}{" "}
+                      {!q.is_active && <Badge variant="secondary">Pasif</Badge>}{" "}
+                      {q.is_required && <Badge variant="outline">Zorunlu</Badge>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {q.code} · {TYPE_LABELS[q.input_type]}
+                      {q.question_options.length > 0 &&
+                        ` · ${q.question_options
+                          .map((o) => o.label_tr)
+                          .join(", ")}`}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Düzenle"
+                      disabled={pending}
+                      onClick={() => startEdit(q)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => toggle(q.id, !q.is_active)}
+                    >
+                      {q.is_active ? "Pasif" : "Aktif"}
+                    </Button>
+                    <ConfirmButton
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive"
+                      title="Sil"
+                      message={`"${q.label_tr}" sorusu silinsin mi?`}
+                      confirmText="Sil"
+                      onConfirm={() => remove(q.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </ConfirmButton>
+                  </div>
                 </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pending}
-                onClick={() => toggle(q.id, !q.is_active)}
-              >
-                {q.is_active ? "Pasifleştir" : "Aktifleştir"}
-              </Button>
+              )}
             </CardContent>
           </Card>
         ))}
