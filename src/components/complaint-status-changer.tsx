@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +33,13 @@ export function ComplaintStatusChanger({
   );
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // After a transition router.refresh() changes `current` without remounting;
+  // re-derive the selection or the Select goes stale/blank.
+  useEffect(() => {
+    setToStatus(next[0] ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, canReopen]);
 
   if (next.length === 0) {
     return (

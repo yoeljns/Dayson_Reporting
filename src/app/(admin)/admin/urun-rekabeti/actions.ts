@@ -78,25 +78,32 @@ export async function moveProductCategory(input: {
 
   const { data: cats, error: qErr } = await admin
     .from("product_categories")
-    .select("id, sort_order")
+    .select("id, code, label_tr, is_active")
     .order("sort_order")
     .order("id");
   if (qErr) return { error: qErr.message };
 
-  const order = (cats ?? []).map((c) => c.id as string);
-  const i = order.indexOf(input.categoryId);
+  const order = (cats ?? []) as {
+    id: string;
+    code: string;
+    label_tr: string;
+    is_active: boolean;
+  }[];
+  const i = order.findIndex((c) => c.id === input.categoryId);
   if (i < 0) return { error: "Kategori bulunamadı." };
   const j = input.direction === "up" ? i - 1 : i + 1;
   if (j < 0 || j >= order.length) return { ok: true }; // already at the edge
   [order[i], order[j]] = [order[j], order[i]];
 
-  for (let k = 0; k < order.length; k++) {
-    const { error } = await admin
-      .from("product_categories")
-      .update({ sort_order: (k + 1) * 10 })
-      .eq("id", order[k]);
-    if (error) return { error: error.message };
-  }
+  // Single upsert = one atomic statement; a per-row update loop could be
+  // interrupted halfway and leave the list in a mixed, colliding order.
+  const { error } = await admin
+    .from("product_categories")
+    .upsert(
+      order.map((c, k) => ({ ...c, sort_order: (k + 1) * 10 })),
+      { onConflict: "id" }
+    );
+  if (error) return { error: error.message };
   revalidatePath("/admin/urun-rekabeti");
   return { ok: true };
 }

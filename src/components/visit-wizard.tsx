@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -88,6 +88,9 @@ export function VisitWizard({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [autosaveWarn, setAutosaveWarn] = useState(false);
+  // Guards the warning against out-of-order autosave results: only the most
+  // recently started save may set/clear it.
+  const autosaveSeq = useRef(0);
   const [step, setStep] = useState(0);
 
   const byCode = useMemo(() => {
@@ -305,6 +308,7 @@ export function VisitWizard({
     startTransition(async () => {
       const err = await saveAll(complete);
       if (err) return setError(err);
+      autosaveSeq.current++; // a stale in-flight autosave may not re-warn
       setAutosaveWarn(false);
       if (complete) {
         router.push("/");
@@ -339,11 +343,16 @@ export function VisitWizard({
   }
 
   /** Advance a step and autosave in the background, so a killed PWA or dead
-   *  battery doesn't lose everything typed so far. */
+   *  battery doesn't lose everything typed so far. Completed visits are never
+   *  autosaved: saveVisit(false) would demote them to draft and wipe
+   *  completed_at just for paging through. */
   function goNext() {
     setStep((s) => Math.min(total - 1, s + 1));
-    if (!isOwner) return;
-    void saveAll(false).then((err) => setAutosaveWarn(err != null));
+    if (!isOwner || initialCompleted) return;
+    const seq = ++autosaveSeq.current;
+    void saveAll(false).then((err) => {
+      if (seq === autosaveSeq.current) setAutosaveWarn(err != null);
+    });
   }
 
   const isLast = step >= total - 1;
@@ -634,7 +643,7 @@ export function VisitWizard({
       {autosaveWarn && (
         <p className="text-xs text-amber-600">
           Otomatik kayıt başarısız — bağlantınızı kontrol edin. Cevaplarınız bu
-          ekranda duruyor; bağlantı gelince tekrar kaydedilir.
+          ekranda duruyor; sonraki adımda veya kaydettiğinizde yeniden denenir.
         </p>
       )}
 

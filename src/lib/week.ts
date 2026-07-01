@@ -92,10 +92,11 @@ export function weekDayOptions(weekStart: string): { iso: string; label: string 
   });
 }
 
-/** Whole days from `iso` until today (positive = in the past). null if no date. */
+/** Whole days from `iso` until today (positive = in the past). null if no date.
+ *  Anchored to the app timezone so it agrees with todayIso()-based ranges. */
 export function daysSince(iso: string | null): number | null {
   if (!iso) return null;
-  return differenceInCalendarDays(new Date(), parseISO(iso));
+  return differenceInCalendarDays(parseISO(todayIso()), parseISO(iso));
 }
 
 /**

@@ -64,7 +64,11 @@ begin
   end if;
 
   v_manager := is_manager();
-  if not (v_manager or v_reporter = v_uid or v_assignee = v_uid) then
+  -- coalesce: with assignee_id NULL (the default) "v_assignee = v_uid" is NULL,
+  -- and IF NOT NULL would silently skip the raise — bypassing the check.
+  if not (v_manager
+          or coalesce(v_reporter = v_uid, false)
+          or coalesce(v_assignee = v_uid, false)) then
     raise exception 'Bu şikayet üzerinde yetkiniz yok';
   end if;
 
