@@ -21,14 +21,17 @@ const statusVariant: Record<
 };
 
 export default async function ComplaintsListPage() {
-  await requireProfile();
+  const profile = await requireProfile();
   const supabase = createClient();
 
+  // Show all finalized complaints (as RLS allows) plus the viewer's own drafts —
+  // other people's drafts stay hidden even from managers.
   const { data: complaints } = await supabase
     .from("complaints")
     .select(
-      "id, title, type, status, created_at, complainant_name, companies(name)"
+      "id, title, type, status, is_draft, created_at, complainant_name, companies(name)"
     )
+    .or(`is_draft.eq.false,reported_by.eq.${profile.id}`)
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -51,8 +54,12 @@ export default async function ComplaintsListPage() {
             const company = Array.isArray(c.companies)
               ? c.companies[0]
               : (c.companies as { name: string } | null);
+            // Drafts resume the form; finalized complaints open the detail page.
+            const href = c.is_draft
+              ? `/sikayet/yeni?draft=${c.id}`
+              : `/sikayet/${c.id}`;
             return (
-              <Link key={c.id} href={`/sikayet/${c.id}`}>
+              <Link key={c.id} href={href}>
                 <Card className="hover:bg-accent">
                   <CardContent className="flex items-center justify-between p-3">
                     <div>
@@ -62,9 +69,15 @@ export default async function ComplaintsListPage() {
                         {COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]}
                       </div>
                     </div>
-                    <Badge variant={statusVariant[c.status as ComplaintStatus]}>
-                      {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
-                    </Badge>
+                    {c.is_draft ? (
+                      <Badge variant="secondary">Taslak</Badge>
+                    ) : (
+                      <Badge
+                        variant={statusVariant[c.status as ComplaintStatus]}
+                      >
+                        {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
+                      </Badge>
+                    )}
                   </CardContent>
                 </Card>
               </Link>

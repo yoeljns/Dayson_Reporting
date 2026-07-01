@@ -957,4 +957,19 @@ do $$ begin
       values ('catalog_restructure_v1', 'true'::jsonb) on conflict (key) do nothing;
   end if;
 end $$;
+
+-- ============================================================================
+-- Drafts: complaints and competitor observations can be saved incomplete
+-- ("Taslak kaydet") and finalized later. Drafts stay private to the reporter
+-- and are excluded from manager queues and reports. Idempotent.
+-- ============================================================================
+alter table complaints              add column if not exists is_draft boolean not null default false;
+alter table competitor_observations add column if not exists is_draft boolean not null default false;
+
+-- Reporters may finalize/edit their OWN draft complaints (status changes still
+-- go through the RPC; a finalized complaint is no longer editable this way).
+drop policy if exists complaints_update_own_draft on complaints;
+create policy complaints_update_own_draft on complaints for update
+  using (reported_by = auth.uid() and is_draft)
+  with check (reported_by = auth.uid());
 `;

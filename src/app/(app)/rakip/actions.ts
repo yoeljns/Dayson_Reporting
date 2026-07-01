@@ -43,36 +43,61 @@ export async function createCompetitor(
   return { id: data.id, name: data.name };
 }
 
-export async function createCompetitorObservation(input: {
-  competitorId: string;
+export async function saveObservation(input: {
+  id?: string | null;
+  competitorId?: string | null;
   companyId?: string | null;
   visitId?: string | null;
   productName: string;
   observedPrice?: number | null;
   city?: string | null;
   note?: string | null;
-}): Promise<{ ok?: boolean; error?: string }> {
+  isDraft: boolean;
+}): Promise<{ id?: string; error?: string }> {
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
 
-  if (!input.competitorId) return { error: "Rakip seçiniz." };
-  if (!input.productName.trim()) return { error: "Ürün adı zorunludur." };
+  const productName = input.productName.trim();
 
-  const { error } = await supabase.from("competitor_observations").insert({
-    competitor_id: input.competitorId,
+  if (input.isDraft) {
+    // The competitor is the subject of the record, so a draft needs at least it.
+    if (!input.competitorId) return { error: "Taslak için rakip seçin." };
+  } else {
+    if (!input.competitorId) return { error: "Rakip seçiniz." };
+    if (!productName) return { error: "Ürün adı zorunludur." };
+  }
+
+  const row = {
+    competitor_id: input.competitorId || null,
     company_id: input.companyId || null,
-    salesperson_id: user.id,
     visit_id: input.visitId || null,
-    product_name: input.productName.trim(),
+    product_name: productName,
     observed_price: input.observedPrice ?? null,
     city: input.city?.trim() || null,
     note: input.note?.trim() || null,
-  });
+    is_draft: input.isDraft,
+  };
 
-  if (error) return { error: error.message };
+  let id = input.id || null;
+  if (id) {
+    const { error } = await supabase
+      .from("competitor_observations")
+      .update(row)
+      .eq("id", id);
+    if (error) return { error: error.message };
+  } else {
+    const { data, error } = await supabase
+      .from("competitor_observations")
+      .insert({ ...row, salesperson_id: user.id })
+      .select("id")
+      .single();
+    if (error) return { error: error.message };
+    id = data.id;
+  }
+
   revalidatePath("/rakip");
-  return { ok: true };
+  return { id: id ?? undefined };
 }

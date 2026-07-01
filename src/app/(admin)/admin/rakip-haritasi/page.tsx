@@ -21,6 +21,7 @@ export default async function CompetitorMapPage({
     .select(
       "id, product_name, observed_price, currency, observed_at, city, note, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
     )
+    .eq("is_draft", false)
     .order("observed_at", { ascending: false })
     .limit(300);
   if (searchParams.competitor)

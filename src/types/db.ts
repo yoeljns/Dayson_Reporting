@@ -195,6 +195,7 @@ export interface Complaint {
   priority: number;
   due_date: string | null;
   resolved_at: string | null;
+  is_draft: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -227,6 +228,7 @@ export interface CompetitorObservation {
   observed_at: string;
   city: string | null;
   note: string | null;
+  is_draft: boolean;
   created_at: string;
 }
 

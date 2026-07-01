@@ -33,12 +33,13 @@ export default async function ComplaintDetailPage({
   const { data: c } = await supabase
     .from("complaints")
     .select(
-      "id, type, owner_dept, status, title, description, priority, due_date, created_at, complainant_name, complainant_phone, companies(name), reporter:reported_by(full_name)"
+      "id, type, owner_dept, status, title, description, priority, due_date, created_at, is_draft, complainant_name, complainant_phone, companies(name), reporter:reported_by(full_name)"
     )
     .eq("id", params.id)
     .single();
 
-  if (!c) notFound();
+  // Drafts have no timeline/status yet — they are resumed from the form instead.
+  if (!c || c.is_draft) notFound();
 
   const { data: events } = await supabase
     .from("complaint_events")

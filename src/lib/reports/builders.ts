@@ -238,6 +238,7 @@ export const buildPerformans: ReportBuilder = async (supabase, f, opts) => {
       supabase
         .from("complaints")
         .select("reported_by, created_at")
+        .eq("is_draft", false)
         .gte("created_at", start)
         .lt("created_at", endNext)
         .order("created_at", { ascending: false })
@@ -245,6 +246,7 @@ export const buildPerformans: ReportBuilder = async (supabase, f, opts) => {
       supabase
         .from("competitor_observations")
         .select("salesperson_id, observed_at")
+        .eq("is_draft", false)
         .gte("observed_at", start)
         .lte("observed_at", end)
         .order("observed_at", { ascending: false })
@@ -367,6 +369,7 @@ export const buildSikayet: ReportBuilder = async (supabase, f, opts) => {
     .select(
       "id, title, type, status, owner_dept, priority, created_at, due_date, resolved_at, complainant_name, companies(name), reporter:reported_by(full_name), assignee:assignee_id(full_name)"
     )
+    .eq("is_draft", false)
     .gte("created_at", start)
     .lt("created_at", endNext)
     .order("created_at", { ascending: false })
@@ -443,6 +446,7 @@ export const buildRakip: ReportBuilder = async (supabase, f, opts) => {
     .select(
       "observed_at, product_name, observed_price, currency, city, note, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
     )
+    .eq("is_draft", false)
     .gte("observed_at", start)
     .lte("observed_at", end)
     .order("observed_at", { ascending: false })

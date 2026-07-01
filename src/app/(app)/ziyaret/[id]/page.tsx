@@ -79,11 +79,13 @@ export default async function VisitDetailPage({
       .from("complaints")
       .select("id, title, type, status")
       .eq("visit_id", params.id)
+      .eq("is_draft", false)
       .order("created_at", { ascending: false }),
     supabase
       .from("competitor_observations")
       .select("id, product_name, observed_price, competitors(name)")
       .eq("visit_id", params.id)
+      .eq("is_draft", false)
       .order("created_at", { ascending: false }),
     supabase
       .from("product_categories")

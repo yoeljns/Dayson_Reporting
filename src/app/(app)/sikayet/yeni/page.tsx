@@ -17,7 +17,7 @@ import {
   COMPLAINT_PRIORITY_LABELS,
   type ComplaintType,
 } from "@/lib/enums";
-import { createComplaint } from "../actions";
+import { saveComplaint } from "../actions";
 
 export default function NewComplaintPage() {
   return (
@@ -32,7 +32,9 @@ function NewComplaintForm() {
   const params = useSearchParams();
   const presetCompany = params.get("company");
   const visitId = params.get("visit");
+  const draftId = params.get("draft");
 
+  const [editId, setEditId] = useState<string | null>(null);
   const [company, setCompany] = useState<PickedCompany | null>(null);
   const [complainantName, setComplainantName] = useState("");
   const [complainantPhone, setComplainantPhone] = useState("");
@@ -60,6 +62,35 @@ function NewComplaintForm() {
       );
   }, []);
 
+  // Resume a saved draft: load its fields into the form.
+  useEffect(() => {
+    if (!draftId) return;
+    const supabase = createClient();
+    supabase
+      .from("complaints")
+      .select(
+        "id, company_id, complainant_name, complainant_phone, type, product_category_id, description, priority, due_date, companies(name)"
+      )
+      .eq("id", draftId)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        setEditId(data.id as string);
+        setComplainantName((data.complainant_name as string | null) ?? "");
+        setComplainantPhone((data.complainant_phone as string | null) ?? "");
+        setType(data.type as ComplaintType);
+        setProductCategoryId((data.product_category_id as string | null) ?? "");
+        setDescription((data.description as string | null) ?? "");
+        setPriority((data.priority as number | null) ?? 2);
+        setDueDate((data.due_date as string | null) ?? "");
+        const co = Array.isArray(data.companies)
+          ? data.companies[0]
+          : (data.companies as { name: string } | null);
+        if (data.company_id && co)
+          setCompany({ id: data.company_id as string, name: co.name });
+      });
+  }, [draftId]);
+
   // Preselect the company when arriving from a visit.
   useEffect(() => {
     if (!presetCompany) return;
@@ -74,18 +105,31 @@ function NewComplaintForm() {
       });
   }, [presetCompany]);
 
-  function submit() {
+  function submit(isDraft: boolean) {
     setError(null);
-    if (!description.trim()) {
-      setError("Açıklama zorunludur.");
-      return;
-    }
-    if (!company && !complainantName.trim()) {
-      setError("Şikayet eden kişiyi yazın ya da en altta distribütör seçin.");
-      return;
+    if (isDraft) {
+      if (
+        !description.trim() &&
+        !company &&
+        !complainantName.trim() &&
+        !productCategoryId
+      ) {
+        setError("Taslak kaydetmek için en az bir alan doldurun.");
+        return;
+      }
+    } else {
+      if (!description.trim()) {
+        setError("Açıklama zorunludur.");
+        return;
+      }
+      if (!company && !complainantName.trim()) {
+        setError("Şikayet eden kişiyi yazın ya da en altta distribütör seçin.");
+        return;
+      }
     }
     startTransition(async () => {
-      const res = await createComplaint({
+      const res = await saveComplaint({
+        id: editId,
         companyId: company?.id ?? null,
         complainantName: complainantName || null,
         complainantPhone: complainantPhone || null,
@@ -95,18 +139,21 @@ function NewComplaintForm() {
         description,
         priority,
         dueDate: dueDate || null,
+        isDraft,
       });
       if (res.error || !res.id) {
-        setError(res.error ?? "Şikayet oluşturulamadı.");
+        setError(res.error ?? "Şikayet kaydedilemedi.");
         return;
       }
-      router.push(`/sikayet/${res.id}`);
+      router.push(isDraft ? "/sikayetler" : `/sikayet/${res.id}`);
     });
   }
 
   return (
     <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-lg font-semibold">Yeni Şikayet</h1>
+      <h1 className="text-lg font-semibold">
+        {editId ? "Şikayet Taslağı" : "Yeni Şikayet"}
+      </h1>
 
       <Card>
         <CardContent className="space-y-4 pt-4">
@@ -207,9 +254,23 @@ function NewComplaintForm() {
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <Button className="w-full" disabled={pending} onClick={submit}>
-            Şikayet Oluştur
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              disabled={pending}
+              onClick={() => submit(true)}
+            >
+              Taslak kaydet
+            </Button>
+            <Button
+              className="flex-1"
+              disabled={pending}
+              onClick={() => submit(false)}
+            >
+              {editId ? "Şikayeti Tamamla" : "Şikayet Oluştur"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

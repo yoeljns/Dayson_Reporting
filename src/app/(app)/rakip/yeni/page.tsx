@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { createCompetitorObservation } from "../actions";
+import { saveObservation } from "../actions";
 
 export default function NewCompetitorObservationPage() {
   return (
@@ -28,7 +28,9 @@ function NewCompetitorObservationForm() {
   const params = useSearchParams();
   const presetCompany = params.get("company");
   const visitId = params.get("visit");
+  const draftId = params.get("draft");
 
+  const [editId, setEditId] = useState<string | null>(null);
   const [competitor, setCompetitor] = useState<PickedCompetitor | null>(null);
   const [company, setCompany] = useState<PickedCompany | null>(null);
   const [productName, setProductName] = useState("");
@@ -52,15 +54,53 @@ function NewCompetitorObservationForm() {
       });
   }, [presetCompany]);
 
-  function submit() {
+  // Resume a saved draft: load its fields into the form.
+  useEffect(() => {
+    if (!draftId) return;
+    const supabase = createClient();
+    supabase
+      .from("competitor_observations")
+      .select(
+        "id, product_name, observed_price, city, note, competitor_id, company_id, competitors(name), companies(name)"
+      )
+      .eq("id", draftId)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        setEditId(data.id as string);
+        setProductName((data.product_name as string | null) ?? "");
+        setPrice(
+          data.observed_price == null ? "" : String(data.observed_price)
+        );
+        setCity((data.city as string | null) ?? "");
+        setNote((data.note as string | null) ?? "");
+        const comp = Array.isArray(data.competitors)
+          ? data.competitors[0]
+          : (data.competitors as { name: string } | null);
+        if (data.competitor_id && comp)
+          setCompetitor({ id: data.competitor_id as string, name: comp.name });
+        const co = Array.isArray(data.companies)
+          ? data.companies[0]
+          : (data.companies as { name: string } | null);
+        if (data.company_id && co)
+          setCompany({ id: data.company_id as string, name: co.name });
+      });
+  }, [draftId]);
+
+  function submit(isDraft: boolean) {
     setError(null);
     setSuccess(false);
     if (!competitor) {
       setError("Rakip seçin veya ekleyin.");
       return;
     }
+    if (!isDraft && !productName.trim()) {
+      setError("Ürün adı zorunludur.");
+      return;
+    }
     startTransition(async () => {
-      const res = await createCompetitorObservation({
+      const res = await saveObservation({
+        id: editId,
         competitorId: competitor.id,
         companyId: company?.id ?? null,
         visitId,
@@ -68,9 +108,16 @@ function NewCompetitorObservationForm() {
         observedPrice: price === "" ? null : Number(price),
         city: city || null,
         note: note || null,
+        isDraft,
       });
-      if (res.error) {
-        setError(res.error);
+      if (res.error || !res.id) {
+        setError(res.error ?? "Kaydedilemedi.");
+        return;
+      }
+      // Drafts and resumed records go back to the list; a fresh finalize stays
+      // so the rep can log another observation quickly.
+      if (isDraft || editId) {
+        router.push("/rakip");
         return;
       }
       setSuccess(true);
@@ -82,7 +129,9 @@ function NewCompetitorObservationForm() {
 
   return (
     <div className="mx-auto max-w-md space-y-4">
-      <h1 className="text-lg font-semibold">Rakip Bilgisi</h1>
+      <h1 className="text-lg font-semibold">
+        {editId ? "Rakip Bilgisi Taslağı" : "Rakip Bilgisi"}
+      </h1>
 
       <Card>
         <CardContent className="space-y-4 pt-4">
@@ -152,18 +201,26 @@ function NewCompetitorObservationForm() {
             <Button
               variant="outline"
               className="flex-1"
-              onClick={() => router.push("/")}
+              disabled={pending || !competitor}
+              onClick={() => submit(true)}
             >
-              Bitir
+              Taslak kaydet
             </Button>
             <Button
               className="flex-1"
               disabled={pending || !competitor}
-              onClick={submit}
+              onClick={() => submit(false)}
             >
-              Kaydet
+              {editId ? "Tamamla" : "Kaydet"}
             </Button>
           </div>
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => router.push("/")}
+          >
+            Bitir
+          </Button>
         </CardContent>
       </Card>
     </div>

@@ -49,6 +49,7 @@ export default async function ComplaintQueuePage({
     .select(
       "id, title, type, status, owner_dept, priority, due_date, created_at, complainant_name, companies(name), reporter:reported_by(full_name)"
     )
+    .eq("is_draft", false)
     .order("priority", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(200);

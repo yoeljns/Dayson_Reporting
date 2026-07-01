@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { formatTRY } from "@/lib/utils";
 
 type Row = {
@@ -12,20 +13,23 @@ type Row = {
   observed_price: number | null;
   observed_at: string;
   city: string | null;
+  is_draft: boolean;
   competitors: { name: string } | { name: string }[] | null;
   companies: { name: string } | { name: string }[] | null;
 };
 
 export default async function CompetitorListPage() {
-  await requireProfile();
+  const profile = await requireProfile();
   const supabase = createClient();
 
-  // RLS limits a salesperson to their own observations; managers see all.
+  // RLS limits a salesperson to their own observations; managers see all. Show
+  // finalized rows plus the viewer's own drafts (other drafts stay hidden).
   const { data } = await supabase
     .from("competitor_observations")
     .select(
-      "id, product_name, observed_price, observed_at, city, competitors(name), companies(name)"
+      "id, product_name, observed_price, observed_at, city, is_draft, competitors(name), companies(name)"
     )
+    .or(`is_draft.eq.false,salesperson_id.eq.${profile.id}`)
     .order("observed_at", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(100);
@@ -63,14 +67,18 @@ export default async function CompetitorListPage() {
             const company = Array.isArray(o.companies)
               ? o.companies[0]
               : o.companies;
-            return (
-              <Card key={o.id}>
+            const card = (
+              <Card
+                key={o.id}
+                className={o.is_draft ? "hover:bg-accent" : undefined}
+              >
                 <CardContent className="flex items-center justify-between gap-2 p-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 font-medium">
                       <Swords className="h-4 w-4 shrink-0 text-primary" />
                       <span className="truncate">
-                        {comp?.name ?? "Rakip"} · {o.product_name}
+                        {comp?.name ?? "Rakip"}
+                        {o.product_name ? ` · ${o.product_name}` : ""}
                       </span>
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
@@ -79,11 +87,25 @@ export default async function CompetitorListPage() {
                         .join(" · ")}
                     </div>
                   </div>
-                  <span className="shrink-0 font-medium">
-                    {formatTRY(o.observed_price)}
-                  </span>
+                  {o.is_draft ? (
+                    <Badge variant="secondary" className="shrink-0">
+                      Taslak
+                    </Badge>
+                  ) : (
+                    <span className="shrink-0 font-medium">
+                      {formatTRY(o.observed_price)}
+                    </span>
+                  )}
                 </CardContent>
               </Card>
+            );
+            // Drafts resume the form; finalized rows are read-only.
+            return o.is_draft ? (
+              <Link key={o.id} href={`/rakip/yeni?draft=${o.id}`}>
+                {card}
+              </Link>
+            ) : (
+              card
             );
           })
         )}
