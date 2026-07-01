@@ -16,13 +16,18 @@ import { changeComplaintStatus } from "@/app/(app)/sikayet/actions";
 export function ComplaintStatusChanger({
   complaintId,
   current,
+  canReopen = false,
 }: {
   complaintId: string;
   current: ComplaintStatus;
+  /** Managers may reopen a closed complaint (cozuldu/iptal → islemde). */
+  canReopen?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const next = COMPLAINT_TRANSITIONS[current];
+  const closed = COMPLAINT_TRANSITIONS[current].length === 0;
+  const next: ComplaintStatus[] =
+    closed && canReopen ? ["islemde"] : COMPLAINT_TRANSITIONS[current];
   const [toStatus, setToStatus] = useState<ComplaintStatus | "">(
     next[0] ?? ""
   );

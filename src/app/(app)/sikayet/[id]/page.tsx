@@ -27,7 +27,7 @@ export default async function ComplaintDetailPage({
 }: {
   params: { id: string };
 }) {
-  await requireProfile();
+  const profile = await requireProfile();
   const supabase = createClient();
 
   const { data: c } = await supabase
@@ -106,6 +106,7 @@ export default async function ComplaintDetailPage({
           <ComplaintStatusChanger
             complaintId={c.id}
             current={c.status as ComplaintStatus}
+            canReopen={profile.role !== "salesperson"}
           />
         </CardContent>
       </Card>

@@ -96,6 +96,13 @@ Yönetim → Kullanıcılar ekranında iki yol var:
 
   Bu ayarlar yoksa geçici şifre yöntemini kullanın.
 
+> **Güvenlik — public signup'ı kapatın:** Kullanıcılar yalnızca yönetici
+> tarafından eklenmeli. Supabase'de **Authentication → Providers → Email →
+> "Allow new users to sign up"** seçeneğini KAPATIN; aksi halde herkes anon
+> anahtarla kendine hesap açabilir. (Uygulama tarafında yeni hesaplar her durumda
+> 'salesperson' rolüyle doğar; admin/yönetici rolü yalnızca Kullanıcılar
+> ekranından atanır.)
+
 ## Notlar
 
 - Mobilde "Ana ekrana ekle" ile PWA olarak kurulabilir.
