@@ -994,16 +994,27 @@ create policy cevents_insert_reporter on complaint_events for insert
   );
 
 -- ============================================================================
--- Product matrix collapsed to a single category: PU ("PU mastik"). All other
--- categories are deactivated. Guarded once (catalog_pu_only_v1) so later admin
--- edits are not overridden. Idempotent.
+-- Merge only the PU-family mastics (PU, Extra PU, Tixo) into a single "PU mastik"
+-- category. Bands (Maskeleme) and sandpapers (Soft, Cırt, Su/Kuru) STAY active.
+-- Guarded once (catalog_pu_only_v1) so later admin edits are not overridden.
 -- ============================================================================
 do $$ begin
   if not exists (select 1 from app_settings where key = 'catalog_pu_only_v1') then
-    update product_categories set is_active = false where code <> 'pu';
+    update product_categories set is_active = false where code in ('extra_pu','tixo');
     update product_categories set is_active = true, label_tr = 'PU mastik' where code = 'pu';
     insert into app_settings (key, value)
       values ('catalog_pu_only_v1', 'true'::jsonb) on conflict (key) do nothing;
+  end if;
+end $$;
+
+-- Repair for DBs where an earlier version of the block above wrongly deactivated
+-- the bands + sandpapers: restore them (the PU-family stays merged into PU mastik).
+do $$ begin
+  if not exists (select 1 from app_settings where key = 'catalog_pu_bands_restore_v1') then
+    update product_categories set is_active = true
+      where code in ('maskeleme', 'soft', 'cirt_zimp', 'su_kuru');
+    insert into app_settings (key, value)
+      values ('catalog_pu_bands_restore_v1', 'true'::jsonb) on conflict (key) do nothing;
   end if;
 end $$;
 `;
