@@ -58,6 +58,7 @@ export default async function ManagerDashboardPage() {
     { data: weekPlans },
     { data: overdueList },
     { data: pendingPlanList },
+    { data: allProfiles },
   ] = await Promise.all([
     supabase
       .from("companies")
@@ -133,6 +134,9 @@ export default async function ManagerDashboardPage() {
       .order("week_start", { ascending: true })
       .order("submitted_at", { ascending: true })
       .limit(5),
+    // ALL profiles (incl. deactivated/managers) so assignment labels never show
+    // "Atanmamış" for a dealer that is actually assigned to a deactivated rep.
+    supabase.from("profiles").select("id, full_name"),
   ]);
 
   // Dealer coverage: which distributors are unassigned or long-unvisited.
@@ -145,7 +149,7 @@ export default async function ManagerDashboardPage() {
       r.last_visit_date as string | null,
     ])
   );
-  const spName = new Map((salespeople ?? []).map((p) => [p.id, p.full_name]));
+  const spName = new Map((allProfiles ?? []).map((p) => [p.id, p.full_name]));
   const dealers = (distributors ?? []) as { id: string; name: string }[];
   const unassignedCount = dealers.filter((c) => !assignedTo.has(c.id)).length;
   const staleDealers = dealers
@@ -198,7 +202,7 @@ export default async function ManagerDashboardPage() {
     {
       label: "Geciken şikayet",
       value: overdueComplaints ?? 0,
-      href: "/admin/sikayetler?status=acik",
+      href: "/admin/sikayetler?overdue=1",
       alert: (overdueComplaints ?? 0) > 0,
     },
     {
@@ -222,7 +226,7 @@ export default async function ManagerDashboardPage() {
     {
       label: "Bugün tamamlanan ziyaret",
       value: todayVisits ?? 0,
-      href: "/admin/ziyaretler?status=tamamlandi",
+      href: `/admin/ziyaretler?status=tamamlandi&date=${today}`,
       alert: false,
     },
   ];

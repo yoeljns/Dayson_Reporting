@@ -25,7 +25,13 @@ type Row = {
 export default async function ManagerVisitHistoryPage({
   searchParams,
 }: {
-  searchParams: { status?: string; sp?: string; company?: string; q?: string };
+  searchParams: {
+    status?: string;
+    sp?: string;
+    company?: string;
+    q?: string;
+    date?: string;
+  };
 }) {
   await requireManager();
   const supabase = createClient();
@@ -36,6 +42,10 @@ export default async function ManagerVisitHistoryPage({
   const spFilter = searchParams.sp ?? "";
   const companyFilter = searchParams.company ?? "";
   const q = (searchParams.q ?? "").trim();
+  // Single-day filter (used by the dashboard's "Bugün tamamlanan ziyaret" card).
+  const dateFilter = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.date ?? "")
+    ? (searchParams.date as string)
+    : "";
 
   let query = supabase
     .from("visits")
@@ -49,6 +59,7 @@ export default async function ManagerVisitHistoryPage({
   if (statusFilter) query = query.eq("status", statusFilter);
   if (spFilter) query = query.eq("salesperson_id", spFilter);
   if (companyFilter) query = query.eq("company_id", companyFilter);
+  if (dateFilter) query = query.eq("visit_date", dateFilter);
 
   const [{ data: visits }, { data: profiles }] = await Promise.all([
     query,
@@ -81,12 +92,13 @@ export default async function ManagerVisitHistoryPage({
 
   const buildHref = (
     status?: VisitStatus,
-    opts?: { dropCompany?: boolean }
+    opts?: { dropCompany?: boolean; dropDate?: boolean }
   ) => {
     const p = new URLSearchParams();
     if (status) p.set("status", status);
     if (spFilter) p.set("sp", spFilter);
     if (companyFilter && !opts?.dropCompany) p.set("company", companyFilter);
+    if (dateFilter && !opts?.dropDate) p.set("date", dateFilter);
     if (q) p.set("q", q);
     const qs = p.toString();
     return qs ? `/admin/ziyaretler?${qs}` : "/admin/ziyaretler";
@@ -115,6 +127,15 @@ export default async function ManagerVisitHistoryPage({
           className="inline-block text-sm text-muted-foreground hover:text-foreground"
         >
           ← Tüm firmalar
+        </Link>
+      )}
+
+      {dateFilter && (
+        <Link
+          href={buildHref(statusFilter, { dropDate: true })}
+          className="inline-block text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Tüm tarihler (şu an: {dateFilter})
         </Link>
       )}
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
+import { todayIso, daysSince, formatTRDate } from "@/lib/week";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -28,10 +29,11 @@ const statusVariant: Record<
 export default async function ComplaintQueuePage({
   searchParams,
 }: {
-  searchParams: { status?: string; dept?: string };
+  searchParams: { status?: string; dept?: string; overdue?: string };
 }) {
   await requireManager();
   const supabase = createClient();
+  const today = todayIso();
 
   const status = COMPLAINT_STATUSES.includes(
     searchParams.status as ComplaintStatus
@@ -43,6 +45,9 @@ export default async function ComplaintQueuePage({
   )
     ? (searchParams.dept as ComplaintOwnerDept)
     : undefined;
+  // Overdue view: due date passed and still open/in progress. This is what the
+  // dashboard's "Geciken şikayet" card counts, so the card must land here.
+  const overdue = searchParams.overdue === "1";
 
   let query = supabase
     .from("complaints")
@@ -53,16 +58,27 @@ export default async function ComplaintQueuePage({
     .order("priority", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(200);
-  if (status) query = query.eq("status", status);
+  if (overdue) {
+    query = query.in("status", ["acik", "islemde"]).lt("due_date", today);
+  } else if (status) {
+    query = query.eq("status", status);
+  }
   if (dept) query = query.eq("owner_dept", dept);
 
   const { data: complaints } = await query;
 
-  function buildHref(next: { status?: string; dept?: string }) {
+  function buildHref(next: {
+    status?: string;
+    dept?: string;
+    overdue?: boolean;
+  }) {
     const sp = new URLSearchParams();
-    const s = next.status ?? status;
+    // Picking a status chip leaves the overdue view and vice versa.
+    const o = next.overdue ?? (next.status ? false : overdue);
+    const s = next.status ?? (next.overdue ? undefined : status);
     const d = next.dept ?? dept;
-    if (s) sp.set("status", s);
+    if (o) sp.set("overdue", "1");
+    else if (s) sp.set("status", s);
     if (d) sp.set("dept", d);
     const qs = sp.toString();
     return qs ? `/admin/sikayetler?${qs}` : "/admin/sikayetler";
@@ -74,14 +90,20 @@ export default async function ComplaintQueuePage({
 
       <div className="space-y-2">
         <div className="flex flex-wrap gap-2">
-          <FilterChip href="/admin/sikayetler" active={!status && !dept}>
+          <FilterChip
+            href="/admin/sikayetler"
+            active={!status && !dept && !overdue}
+          >
             Tümü
+          </FilterChip>
+          <FilterChip href={buildHref({ overdue: true })} active={overdue}>
+            Gecikenler
           </FilterChip>
           {COMPLAINT_STATUSES.map((s) => (
             <FilterChip
               key={s}
               href={buildHref({ status: s })}
-              active={status === s}
+              active={!overdue && status === s}
             >
               {COMPLAINT_STATUS_LABELS[s]}
             </FilterChip>
@@ -113,6 +135,10 @@ export default async function ComplaintQueuePage({
             const reporter = Array.isArray(c.reporter)
               ? c.reporter[0]
               : (c.reporter as { full_name: string } | null);
+            const isOverdue =
+              c.due_date != null &&
+              c.due_date < today &&
+              (c.status === "acik" || c.status === "islemde");
             return (
               <Link key={c.id} href={`/sikayet/${c.id}`}>
                 <Card className="hover:bg-accent">
@@ -124,14 +150,23 @@ export default async function ComplaintQueuePage({
                         {COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]} ·{" "}
                         {COMPLAINT_OWNER_DEPT_LABELS[c.owner_dept as keyof typeof COMPLAINT_OWNER_DEPT_LABELS]} ·{" "}
                         {reporter?.full_name}
+                        {c.due_date
+                          ? ` · Termin: ${formatTRDate(c.due_date)}`
+                          : ""}
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge
-                        variant={statusVariant[c.status as ComplaintStatus]}
-                      >
-                        {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
-                      </Badge>
+                      {isOverdue ? (
+                        <Badge variant="destructive">
+                          {daysSince(c.due_date) ?? 0} gün gecikti
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant={statusVariant[c.status as ComplaintStatus]}
+                        >
+                          {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
+                        </Badge>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         {COMPLAINT_PRIORITY_LABELS[c.priority]}
                       </span>
