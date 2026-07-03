@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Swords,
   Shield,
-  LayoutDashboard,
   LogOut,
   UserCog,
 } from "lucide-react";
@@ -36,18 +35,14 @@ export function AppNav({
   const pathname = usePathname();
   const isManager = role === "manager" || role === "admin";
 
+  // İş Panosu lives at /admin now (Panel merged into the dashboard), so a
+  // single Yönetim entry is enough.
   const items = [
     ...navItems,
-    ...(isManager
-      ? [
-          { href: "/admin/panel", label: "Panel", icon: LayoutDashboard },
-          { href: "/admin", label: "Yönetim", icon: Shield },
-        ]
-      : []),
+    ...(isManager ? [{ href: "/admin", label: "Yönetim", icon: Shield }] : []),
   ];
 
-  // Highlight the single most specific match so /admin/panel lights up "Panel",
-  // not also "Yönetim" (whose href "/admin" is a prefix of it).
+  // Highlight the single most specific match (e.g. /ziyaretler vs /).
   const activeHref = items
     .map((i) => i.href)
     .filter((h) =>
