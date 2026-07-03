@@ -105,11 +105,13 @@ Yönetim → Kullanıcılar ekranında iki yol var:
 
 ## Notlar
 
-- Mobilde "Ana ekrana ekle" ile PWA olarak kurulabilir.
+- Mobilde uygulama olarak kurulabilir: Android Chrome'da menü →
+  **"Uygulamayı yükle"** (iOS Safari'de "Ana Ekrana Ekle").
 
-- PWA ikonları `public/icons/icon-192.png` ve `icon-512.png` olarak
-  eklenmelidir (manifest bunlara referans verir). Eklenene kadar uygulama
-  çalışır; yalnız "ana ekrana ekle" görselini etkiler.
+- PWA ikonları (`public/icons/`) repoya dahildir ve `public/logo.png`'den
+  `npm run gen:icons` ile üretilir. Logo değişirse script'i yeniden çalıştırıp
+  ikonları commit'leyin — manifest'teki 192/512/maskable ikonlar geçersiz
+  olursa Android gerçek kurulum (WebAPK) sunmaz.
 - Tam tip güvenliği için Supabase tip üretimi:
   `supabase gen types typescript --project-id <id> > src/types/supabase.ts`.
 

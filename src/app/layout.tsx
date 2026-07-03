@@ -7,6 +7,10 @@ export const metadata: Metadata = {
   title: "Dayson Raporlama",
   description: "Pazarlama saha raporlama sistemi",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
   appleWebApp: {
     capable: true,
     title: "Dayson Raporlama",
