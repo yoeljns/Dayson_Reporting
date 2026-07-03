@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: "Dayson Raporlama",
+    title: "Avrupa Ziyaret",
     statusBarStyle: "default",
   },
 };

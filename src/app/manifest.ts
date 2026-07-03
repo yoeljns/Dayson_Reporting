@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Dayson Raporlama",
-    short_name: "Dayson",
+    name: "Avrupa Ziyaret",
+    short_name: "Avrupa Ziyaret",
     description: "Pazarlama saha raporlama sistemi",
     id: "/",
     start_url: "/",
