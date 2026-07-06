@@ -14,6 +14,7 @@ import {
   type VisitStatus,
 } from "@/lib/enums";
 import { cn } from "@/lib/utils";
+import { todayIso } from "@/lib/week";
 
 type Row = {
   id: string;
@@ -122,6 +123,12 @@ export default async function ManagerVisitHistoryPage({
   if (dateFilter) {
     exportParams.set("start", dateFilter);
     exportParams.set("end", dateFilter);
+  } else {
+    // No day filter → export the whole history the page represents. Without an
+    // explicit range the report defaults to the last 30 days, which would
+    // silently drop older visits shown here.
+    exportParams.set("start", "2000-01-01");
+    exportParams.set("end", todayIso());
   }
   const exportHref = `/api/admin/raporlar?${exportParams.toString()}`;
 

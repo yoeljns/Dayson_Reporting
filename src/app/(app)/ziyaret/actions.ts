@@ -5,6 +5,18 @@ import { createClient } from "@/lib/supabase/server";
 import { todayIso } from "@/lib/week";
 import type { VisitType, SupplyKind } from "@/lib/enums";
 
+/** True when `s` is a REAL calendar date (YYYY-MM-DD) on or before `today`.
+ *  The regex alone would accept impossible dates like 2026-02-30, which then
+ *  blow up at the Postgres date insert — round-trip through Date to reject them. */
+function isValidVisitDate(s: string, today: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) {
+    return false;
+  }
+  return s <= today;
+}
+
 /** Create a non-customer company on the fly. Returns the new company id. */
 export async function createNonCustomerCompany(input: {
   name: string;
@@ -55,10 +67,7 @@ export async function createDraftVisit(input: {
   // date, but never a malformed or future one.
   const today = todayIso();
   const picked = input.visitDate?.trim();
-  const visitDate =
-    picked && /^\d{4}-\d{2}-\d{2}$/.test(picked) && picked <= today
-      ? picked
-      : today;
+  const visitDate = picked && isValidVisitDate(picked, today) ? picked : today;
 
   const { data, error } = await supabase
     .from("visits")
