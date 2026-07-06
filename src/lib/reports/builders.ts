@@ -144,6 +144,8 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
     q = q.eq("status", f.status);
   if (f.kind && (COMPANY_KINDS as readonly string[]).includes(f.kind))
     q = q.eq("companies.kind", f.kind);
+  if (f.company) q = q.eq("company_id", f.company);
+  if (f.q) q = q.ilike("companies.name", `%${f.q}%`);
 
   const { data } = await q;
   const all = (data ?? []) as Record<string, unknown>[];

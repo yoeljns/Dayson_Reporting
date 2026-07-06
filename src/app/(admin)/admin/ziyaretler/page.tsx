@@ -3,7 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Download } from "lucide-react";
 import { VisitHistoryControls } from "@/components/visit-history-controls";
+import { AdminVisitDeleteButton } from "@/components/admin-visit-delete-button";
 import {
   VISIT_TYPE_LABELS,
   VISIT_STATUS_LABELS,
@@ -33,7 +35,8 @@ export default async function ManagerVisitHistoryPage({
     date?: string;
   };
 }) {
-  await requireManager();
+  const profile = await requireManager();
+  const isAdmin = profile.role === "admin";
   const supabase = createClient();
 
   const statusFilter = VISIT_STATUSES.includes(searchParams.status as VisitStatus)
@@ -110,15 +113,36 @@ export default async function ManagerVisitHistoryPage({
     { key: "taslak", label: "Taslak" },
   ];
 
+  // Export honours the active filters. A single day maps to start=end=date.
+  const exportParams = new URLSearchParams({ type: "ziyaret" });
+  if (statusFilter) exportParams.set("status", statusFilter);
+  if (spFilter) exportParams.set("sp", spFilter);
+  if (companyFilter) exportParams.set("company", companyFilter);
+  if (q) exportParams.set("q", q);
+  if (dateFilter) {
+    exportParams.set("start", dateFilter);
+    exportParams.set("end", dateFilter);
+  }
+  const exportHref = `/api/admin/raporlar?${exportParams.toString()}`;
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">
-          {companyName ? `${companyName} — Ziyaret Geçmişi` : "Ziyaret Geçmişi"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Tüm ekibin ziyaret geçmişi (en yeni üstte, son 300 kayıt).
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">
+            {companyName ? `${companyName} — Ziyaret Geçmişi` : "Ziyaret Geçmişi"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Tüm ekibin ziyaret geçmişi (en yeni üstte, son 300 kayıt).
+          </p>
+        </div>
+        <a
+          href={exportHref}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-accent"
+        >
+          <Download className="h-4 w-4" />
+          Excel&apos;e Aktar
+        </a>
       </div>
 
       {companyFilter && (
@@ -178,9 +202,12 @@ export default async function ManagerVisitHistoryPage({
               ? v.salesperson[0]
               : v.salesperson;
             return (
-              <Link key={v.id} href={`/ziyaret/${v.id}`}>
-                <Card className="hover:bg-accent">
-                  <CardContent className="flex items-center justify-between gap-2 p-3">
+              <Card key={v.id}>
+                <CardContent className="flex items-center justify-between gap-2 p-3">
+                  <Link
+                    href={`/ziyaret/${v.id}`}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 hover:opacity-80"
+                  >
                     <div className="min-w-0">
                       <div className="truncate font-medium">{company?.name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -194,9 +221,10 @@ export default async function ManagerVisitHistoryPage({
                     >
                       {VISIT_STATUS_LABELS[v.status]}
                     </Badge>
-                  </CardContent>
-                </Card>
-              </Link>
+                  </Link>
+                  {isAdmin && <AdminVisitDeleteButton visitId={v.id} />}
+                </CardContent>
+              </Card>
             );
           })
         )}

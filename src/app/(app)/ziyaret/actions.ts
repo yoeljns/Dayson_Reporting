@@ -36,16 +36,29 @@ export async function createNonCustomerCompany(input: {
   return { id: data.id };
 }
 
-/** Create a draft visit after just company + visit type are chosen. */
+/** Create a draft visit after just company + visit type are chosen.
+ *  visitDate lets a rep log a forgotten past visit; future dates are rejected
+ *  back to today. */
 export async function createDraftVisit(input: {
   companyId: string;
   visitType: VisitType;
+  visitDate?: string;
 }): Promise<{ id?: string; error?: string }> {
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
+
+  // Explicit Istanbul date — the DB default is current_date in UTC, which
+  // mis-dates visits logged between 00:00 and 03:00 TR. Accept a chosen past
+  // date, but never a malformed or future one.
+  const today = todayIso();
+  const picked = input.visitDate?.trim();
+  const visitDate =
+    picked && /^\d{4}-\d{2}-\d{2}$/.test(picked) && picked <= today
+      ? picked
+      : today;
 
   const { data, error } = await supabase
     .from("visits")
@@ -54,9 +67,7 @@ export async function createDraftVisit(input: {
       salesperson_id: user.id,
       visit_type: input.visitType,
       status: "taslak",
-      // Explicit Istanbul date — the DB default is current_date in UTC, which
-      // mis-dates visits logged between 00:00 and 03:00 TR.
-      visit_date: todayIso(),
+      visit_date: visitDate,
     })
     .select("id")
     .single();

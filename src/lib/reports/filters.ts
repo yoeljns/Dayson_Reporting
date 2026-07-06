@@ -26,6 +26,8 @@ export type ReportFilters = {
   segment?: string;
   kind?: string;
   category?: string;
+  company?: string; // company_id (visit report)
+  q?: string; // free-text company name (visit report)
 };
 
 const ISO = "yyyy-MM-dd";
@@ -59,6 +61,8 @@ export function parseFilters(sp: URLSearchParams): ReportFilters {
     segment: clean(sp.get("segment")),
     kind: clean(sp.get("kind")),
     category: clean(sp.get("category")),
+    company: clean(sp.get("company")),
+    q: clean(sp.get("q")),
   };
 }
 

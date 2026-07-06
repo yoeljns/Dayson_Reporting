@@ -17,6 +17,7 @@ import {
   type VisitType,
 } from "@/lib/enums";
 import { cn } from "@/lib/utils";
+import { todayIso } from "@/lib/week";
 import {
   createDraftVisit,
   createNonCustomerCompany,
@@ -27,8 +28,10 @@ type Selected = { id: string; name: string };
 
 export default function NewVisitPage() {
   const router = useRouter();
+  const today = todayIso();
   const [kind, setKind] = useState<CompanyKind>("distributor");
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [visitDate, setVisitDate] = useState(today);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCity, setNewCity] = useState("");
@@ -64,6 +67,7 @@ export default function NewVisitPage() {
           companyId: selected.id,
           companyName: selected.name,
           visitType,
+          visitDate,
         });
         window.dispatchEvent(new Event("dayson:offline-queue"));
         router.push("/");
@@ -75,6 +79,7 @@ export default function NewVisitPage() {
       const res = await createDraftVisit({
         companyId: selected.id,
         visitType,
+        visitDate,
       });
       if (res.error || !res.id) {
         setError(res.error ?? "Ziyaret oluşturulamadı.");
@@ -99,8 +104,24 @@ export default function NewVisitPage() {
             <CardTitle className="text-base">{selected.name}</CardTitle>
             <p className="text-sm text-muted-foreground">Ziyaret cinsi seçin</p>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3">
-            {VISIT_TYPES.map((vt) => (
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="visitDate">Ziyaret tarihi</Label>
+              <Input
+                id="visitDate"
+                type="date"
+                value={visitDate}
+                max={today}
+                onChange={(e) => setVisitDate(e.target.value || today)}
+              />
+              {visitDate !== today && (
+                <p className="text-xs text-amber-600">
+                  Geçmiş tarihli ziyaret kaydediyorsunuz.
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {VISIT_TYPES.map((vt) => (
               <Button
                 key={vt}
                 variant="outline"
@@ -115,7 +136,8 @@ export default function NewVisitPage() {
                 )}
                 <span>{VISIT_TYPE_LABELS[vt]}</span>
               </Button>
-            ))}
+              ))}
+            </div>
           </CardContent>
         </Card>
         <p className="text-center text-xs text-muted-foreground">

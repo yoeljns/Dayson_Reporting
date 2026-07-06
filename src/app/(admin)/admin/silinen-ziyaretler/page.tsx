@@ -2,10 +2,12 @@ import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RestoreVisitButton } from "@/components/restore-visit-button";
 import { VISIT_TYPE_LABELS, VISIT_STATUS_LABELS, type VisitType, type VisitStatus } from "@/lib/enums";
 
 export default async function DeletedVisitsPage() {
-  await requireManager();
+  const profile = await requireManager();
+  const isAdmin = profile.role === "admin";
   const supabase = createClient();
 
   const { data: visits } = await supabase
@@ -53,9 +55,12 @@ export default async function DeletedVisitsPage() {
                       {remover ? ` · silen: ${remover.full_name}` : ""}
                     </div>
                   </div>
-                  <Badge variant="secondary">
-                    {VISIT_STATUS_LABELS[v.status as VisitStatus]}
-                  </Badge>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge variant="secondary">
+                      {VISIT_STATUS_LABELS[v.status as VisitStatus]}
+                    </Badge>
+                    {isAdmin && <RestoreVisitButton visitId={v.id} />}
+                  </div>
                 </CardContent>
               </Card>
             );

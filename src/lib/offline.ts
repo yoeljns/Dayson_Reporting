@@ -8,6 +8,8 @@ export interface PendingVisit {
   companyId: string;
   companyName: string;
   visitType: VisitType;
+  /** Chosen visit date (YYYY-MM-DD); older queued items may lack it. */
+  visitDate?: string;
   createdAt: number;
 }
 

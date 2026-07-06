@@ -36,6 +36,7 @@ export function OfflineSync() {
         const res = await createDraftVisit({
           companyId: item.companyId,
           visitType: item.visitType,
+          visitDate: item.visitDate,
         });
         if (res.id) await removePendingVisit(item.localId);
       }
