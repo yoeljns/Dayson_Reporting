@@ -132,7 +132,7 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
   let q = supabase
     .from("visits")
     .select(
-      "id, visit_date, visit_type, status, companies!inner(name, city, kind, segment), salesperson:salesperson_id(full_name)"
+      "id, visit_date, visit_type, status, companies!inner(name, city, kind, segment), salesperson:salesperson_id(full_name), contact:contact_id(name, role)"
     )
     .is("deleted_at", null)
     .gte("visit_date", start)
@@ -185,9 +185,60 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
     }
   }
 
+  // Product matrix ("hangi ürünü kimden alıyor") lives in visit_product_answers,
+  // outside the visit_answers pivot — add one column per active category.
+  const { data: cats } = await supabase
+    .from("product_categories")
+    .select("id, label_tr, sort_order")
+    .eq("is_active", true)
+    .order("sort_order");
+  const categories = (cats ?? []) as { id: string; label_tr: string }[];
+
+  const productByVisit = new Map<string, Map<string, string[]>>();
+  for (const ids of chunk(visitIds, 500)) {
+    if (ids.length === 0) continue;
+    const { data: pa } = await supabase
+      .from("visit_product_answers")
+      .select(
+        "visit_id, category_id, custom_name, supply_kind, product_brands(name)"
+      )
+      .in("visit_id", ids);
+    for (const a of (pa ?? []) as {
+      visit_id: string;
+      category_id: string;
+      custom_name: string | null;
+      supply_kind: string;
+      product_brands: { name: string } | { name: string }[] | null;
+    }[]) {
+      const label =
+        a.supply_kind !== "brand"
+          ? SUPPLY_KIND_LABELS[
+              a.supply_kind as keyof typeof SUPPLY_KIND_LABELS
+            ] ?? a.supply_kind
+          : one(a.product_brands)?.name ?? a.custom_name ?? "";
+      if (!label) continue;
+      let m = productByVisit.get(a.visit_id);
+      if (!m) {
+        m = new Map();
+        productByVisit.set(a.visit_id, m);
+      }
+      const arr = m.get(a.category_id) ?? [];
+      arr.push(label);
+      m.set(a.category_id, arr);
+    }
+  }
+
   // Disambiguate question labels that collide with each other OR with a fixed
   // column header (labels are admin-editable) by appending the unique code.
-  const fixed = ["Tarih", "Firma", "Şehir", "Tür", "Pazarlamacı", "Durum"];
+  const fixed = [
+    "Tarih",
+    "Firma",
+    "Şehir",
+    "Tür",
+    "Pazarlamacı",
+    "Görüşülen kişi",
+    "Durum",
+  ];
   const labelCount = new Map<string, number>();
   for (const fx of fixed) labelCount.set(fx, (labelCount.get(fx) ?? 0) + 1);
   for (const ques of questions)
@@ -197,23 +248,34 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
       ? `${ques.label_tr} (${ques.code})`
       : ques.label_tr;
 
-  const headers = [...fixed, ...questions.map(headerFor)];
+  const productHeaders = categories.map((c) => `Ürün: ${c.label_tr}`);
+  const headers = [...fixed, ...questions.map(headerFor), ...productHeaders];
 
   const rows: SheetRow[] = visits.map((v) => {
     const company = one(v.companies as { name?: string; city?: string } | null);
     const sp = one(v.salesperson as { full_name?: string } | null);
+    const contact = one(v.contact as { name?: string; role?: string } | null);
+    const contactLabel = contact?.name
+      ? contact.role
+        ? `${contact.name} (${contact.role})`
+        : contact.name
+      : "";
     const row: SheetRow = {
       Tarih: formatTRDate(v.visit_date as string),
       Firma: company?.name ?? "",
       Şehir: company?.city ?? "",
       Tür: VISIT_TYPE_LABELS[v.visit_type as VisitType] ?? (v.visit_type as string),
       Pazarlamacı: sp?.full_name ?? "",
+      "Görüşülen kişi": contactLabel,
       Durum:
         VISIT_STATUS_LABELS[v.status as VisitStatus] ?? (v.status as string),
     };
     const am = answersByVisit.get(v.id as string);
     for (const ques of questions)
       row[headerFor(ques)] = resolveAnswer(ques, am?.get(ques.id), optMaps.get(ques.id));
+    const pm = productByVisit.get(v.id as string);
+    for (const c of categories)
+      row[`Ürün: ${c.label_tr}`] = pm?.get(c.id)?.join(", ") ?? "";
     return row;
   });
 
