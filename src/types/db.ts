@@ -23,6 +23,8 @@ export interface Profile {
   role: UserRole;
   is_active: boolean;
   created_at: string;
+  /** Manager/admin UI preference; null = role default (see lib/ui-mode.ts). */
+  management_mode?: boolean | null;
 }
 
 export interface Company {

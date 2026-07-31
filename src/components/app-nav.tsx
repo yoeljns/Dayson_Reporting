@@ -9,12 +9,15 @@ import {
   AlertTriangle,
   Swords,
   Shield,
+  LayoutDashboard,
+  BarChart3,
   LogOut,
   UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/app/(auth)/login/actions";
 import { Logo } from "@/components/logo";
+import { ModeToggle } from "@/components/mode-toggle";
 import type { UserRole } from "@/lib/enums";
 
 const navItems = [
@@ -25,22 +28,39 @@ const navItems = [
   { href: "/rakip", label: "Rakip", icon: Swords },
 ];
 
+// Management mode: oversight only, no data-entry screens. Same tab count as the
+// salesperson menu so the mobile bottom bar keeps its spacing.
+const managerNavItems = [
+  { href: "/admin", label: "Pano", icon: LayoutDashboard },
+  { href: "/admin/ziyaretler", label: "Ziyaretler", icon: ClipboardList },
+  { href: "/admin/planlar", label: "Planlar", icon: CalendarDays },
+  { href: "/admin/sikayetler", label: "Şikayetler", icon: AlertTriangle },
+  { href: "/admin/analiz", label: "Analiz", icon: BarChart3 },
+];
+
 export function AppNav({
   role,
   fullName,
+  managementMode = false,
 }: {
   role: UserRole;
   fullName: string;
+  managementMode?: boolean;
 }) {
   const pathname = usePathname();
   const isManager = role === "manager" || role === "admin";
 
   // İş Panosu lives at /admin now (Panel merged into the dashboard), so a
   // single Yönetim entry is enough.
-  const items = [
-    ...navItems,
-    ...(isManager ? [{ href: "/admin", label: "Yönetim", icon: Shield }] : []),
-  ];
+  const items = managementMode
+    ? managerNavItems
+    : [
+        ...navItems,
+        ...(isManager
+          ? [{ href: "/admin", label: "Yönetim", icon: Shield }]
+          : []),
+      ];
+  const homeHref = managementMode ? "/admin" : "/";
 
   // Highlight the single most specific match (e.g. /ziyaretler vs /).
   const activeHref = items
@@ -54,10 +74,11 @@ export function AppNav({
     <>
       {/* Top bar (desktop + mobile header) */}
       <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b bg-background px-4">
-        <Link href="/" className="flex items-center">
+        <Link href={homeHref} className="flex items-center">
           <Logo height={34} />
         </Link>
         <div className="flex items-center gap-3">
+          {isManager && <ModeToggle managementMode={managementMode} />}
           <Link
             href="/hesap"
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"

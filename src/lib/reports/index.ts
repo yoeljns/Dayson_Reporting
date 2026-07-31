@@ -6,6 +6,7 @@ import {
   buildKapsama,
   buildPlan,
   buildMarka,
+  buildKazanim,
   type ReportBuilder,
 } from "@/lib/reports/builders";
 
@@ -71,6 +72,12 @@ export const REPORTS: Record<string, ReportDef> = {
     filters: ["range", "category", "segment", "sp"],
     build: buildMarka,
   },
+  kazanim: {
+    label: "Daysona / Daysondan Dönüş",
+    filenameBase: "kazanim-kayip",
+    filters: ["range"],
+    build: buildKazanim,
+  },
 };
 
 export type ReportType = keyof typeof REPORTS;
@@ -82,4 +89,5 @@ export const REPORT_ORDER: string[] = [
   "kapsama",
   "plan",
   "marka",
+  "kazanim",
 ];

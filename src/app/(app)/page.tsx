@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, FileEdit, AlertTriangle, Swords } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
+import { isManagementMode } from "@/lib/ui-mode";
 import { getEodReminder, getPlanDeadline } from "@/lib/settings";
 import { todayIso, currentWeekStart, shiftWeek } from "@/lib/week";
 import { Button } from "@/components/ui/button";
@@ -13,6 +15,10 @@ import { VISIT_TYPE_LABELS } from "@/lib/enums";
 
 export default async function HomePage() {
   const profile = await requireProfile();
+  // Managers in management mode never see the reporting home — the dashboard is
+  // their landing screen. One tap on the header switch brings this page back.
+  if (isManagementMode(profile)) redirect("/admin");
+
   const supabase = createClient();
   const today = todayIso();
   const isSalesperson = profile.role === "salesperson";

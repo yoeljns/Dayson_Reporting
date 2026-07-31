@@ -1,10 +1,13 @@
 import { requireProfile } from "@/lib/auth";
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { ModeToggle } from "@/components/mode-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { canSwitchMode, isManagementMode } from "@/lib/ui-mode";
 import { USER_ROLE_LABELS } from "@/lib/enums";
 
 export default async function AccountPage() {
   const profile = await requireProfile();
+  const managementMode = isManagementMode(profile);
 
   return (
     <div className="mx-auto max-w-md space-y-4">
@@ -28,6 +31,22 @@ export default async function AccountPage() {
           </div>
         </CardContent>
       </Card>
+
+      {canSwitchMode(profile) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Ekran Modu</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {managementMode
+                ? "Yönetim modundasınız: ekip takibi, planlar, şikayetler ve analiz görünür. Ziyaret/şikayet girme ekranları gizli."
+                : "Raporlama modundasınız: pazarlamacı ekranları görünür, kendiniz ziyaret ve şikayet girebilirsiniz."}
+            </p>
+            <ModeToggle managementMode={managementMode} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

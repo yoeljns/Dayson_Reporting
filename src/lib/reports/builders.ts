@@ -37,6 +37,7 @@ import {
   type RangeMode,
 } from "@/lib/reports/filters";
 import type { Cell, SheetRow } from "@/lib/reports/sheet";
+import { analyzeBrandSwitch } from "@/lib/analytics/brand-switch";
 
 export type BuildResult = {
   sheetName: string;
@@ -54,6 +55,7 @@ export type ReportBuilder = (
 
 /** Default date-range behaviour per report (used by builders AND the page UI). */
 export const REPORT_RANGE_MODE: Record<string, RangeMode> = {
+  kazanim: "month",
   ziyaret: "d30",
   performans: "month",
   sikayet: "d30",
@@ -877,4 +879,37 @@ export const buildMarka: ReportBuilder = async (supabase, f, opts) => {
     rows = rows.slice(0, max);
   }
   return { sheetName: "Marka Rekabeti", headers, rows, capped };
+};
+
+// ---------------------------------------------------------------------------
+// 8) Daysona / Daysondan Dönüş — brand switching per dealer
+// ---------------------------------------------------------------------------
+export const buildKazanim: ReportBuilder = async (supabase, f, opts) => {
+  const max = opts?.limit ?? ROW_CAP;
+  const { start, end } = resolveRange(f, "month");
+  const headers = [
+    "Tarih",
+    "Bayi",
+    "Ürün",
+    "Yön",
+    "Önceki",
+    "Yeni",
+    "Pazarlamacı",
+  ];
+
+  const { transitions } = await analyzeBrandSwitch(supabase, start, end);
+  const capped = transitions.length > max;
+  const rows: SheetRow[] = (capped ? transitions.slice(0, max) : transitions).map(
+    (t) => ({
+      Tarih: formatTRDate(t.date),
+      Bayi: t.companyName,
+      Ürün: t.categoryLabel,
+      Yön: t.won ? "Kazanım (Daysona dönüş)" : "Kayıp (Daysondan dönüş)",
+      Önceki: t.fromLabel,
+      Yeni: t.toLabel,
+      Pazarlamacı: t.salesperson,
+    })
+  );
+
+  return { sheetName: "Kazanım-Kayıp", headers, rows, capped };
 };

@@ -1,6 +1,31 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { requireProfile } from "@/lib/auth";
+import { canSwitchMode } from "@/lib/ui-mode";
+
+/**
+ * Switch the signed-in manager/admin between management (viewing) mode and
+ * reporting mode. Stored on the profile so the choice follows them from phone
+ * to web. RLS policy profiles_update_self allows this (role stays unchanged).
+ */
+export async function setManagementMode(
+  on: boolean
+): Promise<{ ok?: boolean; error?: string }> {
+  const profile = await requireProfile();
+  if (!canSwitchMode(profile)) return { error: "Bu ayar size açık değil." };
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ management_mode: on })
+    .eq("id", profile.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
 
 /** Change the currently signed-in user's own password. */
 export async function changePassword(input: {
