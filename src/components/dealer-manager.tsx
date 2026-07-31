@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -76,7 +77,12 @@ export function DealerManager({
             <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
               <div className="min-w-0">
                 <div className="font-medium">
-                  {d.name}{" "}
+                  <Link
+                    href={`/admin/bayi/${d.id}`}
+                    className="hover:underline"
+                  >
+                    {d.name}
+                  </Link>{" "}
                   {d.segment && (
                     <Badge variant="secondary">{d.segment}</Badge>
                   )}{" "}

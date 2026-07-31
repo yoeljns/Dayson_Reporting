@@ -97,7 +97,14 @@ export default async function AnalizPage({
             {brand.transitions.slice(0, 50).map((t, i) => (
               <tr key={`${t.companyId}-${t.date}-${i}`} className="border-b last:border-0">
                 <td className="p-2 whitespace-nowrap">{formatTRDate(t.date)}</td>
-                <td className="p-2 font-medium">{t.companyName}</td>
+                <td className="p-2 font-medium">
+                  <Link
+                    href={`/admin/bayi/${t.companyId}`}
+                    className="hover:underline"
+                  >
+                    {t.companyName}
+                  </Link>
+                </td>
                 <td className="p-2">{t.categoryLabel}</td>
                 <td className="p-2">
                   <span

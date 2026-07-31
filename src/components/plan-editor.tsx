@@ -242,7 +242,7 @@ function PlanItemRow({
           <div className="min-w-0">
             <div className="flex items-center gap-2 font-medium">
               <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">{item.companyName}</span>
+              <span>{item.companyName}</span>
               {item.segment && <Badge variant="secondary">{item.segment}</Badge>}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">

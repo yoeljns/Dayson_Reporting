@@ -303,10 +303,10 @@ export default async function ManagerDashboardPage() {
                   className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
+                    <span className="block text-sm font-medium">
                       {c.title}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block text-xs text-muted-foreground">
                       {company?.name || c.complainant_name || "—"}
                     </span>
                   </span>
@@ -328,14 +328,14 @@ export default async function ManagerDashboardPage() {
               return (
                 <Link
                   key={d.id}
-                  href="/admin/son-ziyaretler"
+                  href={`/admin/bayi/${d.id}`}
                   className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
+                    <span className="block text-sm font-medium">
                       {d.name}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block text-xs text-muted-foreground">
                       {(sp && spName.get(sp)) || "Atanmamış"}
                     </span>
                   </span>
@@ -366,10 +366,10 @@ export default async function ManagerDashboardPage() {
                   className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
+                    <span className="block text-sm font-medium">
                       {sp?.full_name ?? "—"}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span className="block text-xs text-muted-foreground">
                       {weekRangeLabel(p.week_start)} · {count} firma
                     </span>
                   </span>
@@ -411,7 +411,14 @@ export default async function ManagerDashboardPage() {
                 ) : (
                   team.map((t) => (
                     <tr key={t.id} className="border-b last:border-0">
-                      <td className="p-2 font-medium">{t.name}</td>
+                      <td className="p-2 font-medium">
+                        <Link
+                          href={`/admin/pazarlamaci/${t.id}`}
+                          className="hover:underline"
+                        >
+                          {t.name}
+                        </Link>
+                      </td>
                       <td className="p-2 text-right">{t.assigned}</td>
                       <td className="p-2 text-right">{t.visits}</td>
                       <td className="p-2">

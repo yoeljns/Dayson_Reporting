@@ -144,8 +144,8 @@ export default async function ComplaintQueuePage({
                 <Card className="hover:bg-accent">
                   <CardContent className="flex items-center justify-between gap-2 p-3">
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{c.title}</div>
-                      <div className="truncate text-xs text-muted-foreground">
+                      <div className="font-medium">{c.title}</div>
+                      <div className="text-xs text-muted-foreground">
                         {company?.name || c.complainant_name || "—"} ·{" "}
                         {COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]} ·{" "}
                         {COMPLAINT_OWNER_DEPT_LABELS[c.owner_dept as keyof typeof COMPLAINT_OWNER_DEPT_LABELS]} ·{" "}

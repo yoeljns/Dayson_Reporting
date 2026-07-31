@@ -4,11 +4,12 @@ import { AlertTriangle, Swords, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { VisitWizard } from "@/components/visit-wizard";
+import { VisitRecord } from "@/components/visit-record";
 import { DeleteVisitButton } from "@/components/delete-visit-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatTRY } from "@/lib/utils";
+import { formatTRY, cn } from "@/lib/utils";
 import {
   VISIT_TYPE_LABELS,
   VISIT_STATUS_LABELS,
@@ -41,7 +42,7 @@ export default async function VisitDetailPage({
   const { data: visit } = await supabase
     .from("visits")
     .select(
-      "id, visit_type, status, visit_date, contact_id, salesperson_id, companies(id, name, kind, city, segment, debt_status)"
+      "id, visit_type, status, visit_date, contact_id, salesperson_id, companies(id, name, kind, city, segment, debt_status), salesperson:salesperson_id(full_name), contact:contact_id(name, role)"
     )
     .eq("id", params.id)
     .single();
@@ -171,9 +172,41 @@ export default async function VisitDetailPage({
   );
 
   const linkParams = `company=${company?.id}&visit=${visit.id}`;
+  const isOwner = visit.salesperson_id === profile.id;
+
+  // Anyone but the author reads the visit instead of stepping through the
+  // wizard: the whole record on one page, and no way to alter someone
+  // else's answers by accident.
+  const one = <T,>(r: T | T[] | null | undefined): T | null =>
+    Array.isArray(r) ? r[0] ?? null : r ?? null;
+  const catLabels = new Map(
+    ((cats as { id: string; label_tr: string }[] | null) ?? []).map((c) => [
+      c.id,
+      c.label_tr,
+    ])
+  );
+  const brandNames = new Map<string, string>();
+  for (const list of brandsByCat.values())
+    for (const b of list) brandNames.set(b.brandId, b.name);
+  const recordProducts = (
+    (products as {
+      category_id: string;
+      brand_id: string | null;
+      supply_kind: string;
+    }[]) ?? []
+  ).map((p) => ({
+    categoryLabel: catLabels.get(p.category_id) ?? "—",
+    brandLabel: (p.brand_id && brandNames.get(p.brand_id)) || "—",
+    supplyKind: p.supply_kind as "brand" | "own_production" | "export",
+  }));
 
   return (
-    <div className="mx-auto max-w-md space-y-4">
+    <div
+      className={cn(
+        "mx-auto space-y-4",
+        isOwner ? "max-w-md" : "max-w-3xl text-[15px] sm:text-base"
+      )}
+    >
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-lg font-semibold">{company?.name}</h1>
@@ -195,9 +228,42 @@ export default async function VisitDetailPage({
         </div>
       </div>
 
+      {!isOwner ? (
+        <Card>
+          <CardContent className="pt-4">
+            <VisitRecord
+              showHeader={false}
+              visit={{
+                id: visit.id,
+                visitDate: visit.visit_date,
+                visitType: visit.visit_type,
+                status: visit.status,
+                salesperson: one(
+                  visit.salesperson as unknown as { full_name: string } | null
+                )?.full_name,
+                contactName: one(
+                  visit.contact as unknown as {
+                    name: string;
+                    role: string | null;
+                  } | null
+                )?.name,
+                contactRole: one(
+                  visit.contact as unknown as {
+                    name: string;
+                    role: string | null;
+                  } | null
+                )?.role,
+                questions: applicable,
+                answers: (answers as VisitAnswer[]) ?? [],
+                products: recordProducts,
+              }}
+            />
+          </CardContent>
+        </Card>
+      ) : (
       <VisitWizard
         visitId={visit.id}
-        isOwner={visit.salesperson_id === profile.id}
+        isOwner={isOwner}
         companyId={company?.id ?? ""}
         companyKind={(company?.kind ?? "distributor") as "distributor" | "non_customer"}
         questions={applicable}
@@ -214,6 +280,7 @@ export default async function VisitDetailPage({
         currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}
       />
+      )}
 
       {/* Şikayetler — bu ziyarete bağlı */}
       <Card>

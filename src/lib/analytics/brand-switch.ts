@@ -89,7 +89,8 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export async function analyzeBrandSwitch(
   supabase: SupabaseClient,
   start: string,
-  end: string
+  end: string,
+  opts?: { companyIds?: string[] }
 ): Promise<BrandSwitchResult> {
   // 1) Catalog: which (category, brand) pairs are ours + display labels.
   const [{ data: cats }, { data: brands }, { data: links }] = await Promise.all([
@@ -126,7 +127,7 @@ export async function analyzeBrandSwitch(
   // 2) Completed visits up to `end`, newest first so that hitting FETCH_CAP
   //    drops ANCIENT history rather than the period we are reporting on.
   //    Deleted dealers are excluded (!inner + deleted_at is null).
-  const { data: visitRows } = await supabase
+  let vq = supabase
     .from("visits")
     .select(
       "id, visit_date, created_at, company_id, companies!inner(name, deleted_at), salesperson:salesperson_id(full_name)"
@@ -137,6 +138,14 @@ export async function analyzeBrandSwitch(
     .lte("visit_date", end)
     .order("visit_date", { ascending: false })
     .limit(FETCH_CAP);
+  // Scoping to a dealer (or a rep's dealers) keeps profile pages cheap. Only
+  // the companies are narrowed — each timeline still needs its FULL history,
+  // otherwise a flip would be measured against the wrong previous observation.
+  if (opts?.companyIds) {
+    if (opts.companyIds.length === 0) return { transitions: [], share: [] };
+    vq = vq.in("company_id", opts.companyIds.slice(0, 300));
+  }
+  const { data: visitRows } = await vq;
 
   type VisitRow = {
     id: string;

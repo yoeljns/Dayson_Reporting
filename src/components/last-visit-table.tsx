@@ -25,11 +25,14 @@ export function LastVisitTable({
   rows,
   showSalesperson = false,
   linkBase,
+  linkMode = "query",
 }: {
   rows: LastVisitRow[];
   showSalesperson?: boolean;
   /** When set, each row links to `${linkBase}?company=<id>` (visit history). */
   linkBase?: string;
+  /** "dealer" links to `${linkBase}/<id>` instead — the dealer file page. */
+  linkMode?: "query" | "dealer";
 }) {
   const [term, setTerm] = useState("");
   const [sort, setSort] = useState<Sort>("stale");
@@ -98,7 +101,7 @@ export function LastVisitTable({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 font-medium">
                       <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{r.name}</span>
+                      <span>{r.name}</span>
                       {r.segment && <Badge variant="secondary">{r.segment}</Badge>}
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
@@ -133,7 +136,11 @@ export function LastVisitTable({
             return linkBase ? (
               <Link
                 key={r.companyId}
-                href={`${linkBase}?company=${encodeURIComponent(r.companyId)}`}
+                href={
+                  linkMode === "dealer"
+                    ? `${linkBase}/${encodeURIComponent(r.companyId)}`
+                    : `${linkBase}?company=${encodeURIComponent(r.companyId)}`
+                }
                 className="block"
               >
                 {card}

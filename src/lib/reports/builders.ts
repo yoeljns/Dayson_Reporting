@@ -93,6 +93,7 @@ type AnswerRow = {
   value_text: string | null;
   value_number: number | null;
   value_date: string | null;
+  value_detail: string | null;
 };
 
 /** Resolve one visit-answer cell to its human value based on the question type. */
@@ -175,7 +176,9 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
     if (ids.length === 0) continue;
     const { data: ans } = await supabase
       .from("visit_answers")
-      .select("visit_id, question_id, value_text, value_number, value_date")
+      .select(
+        "visit_id, question_id, value_text, value_number, value_date, value_detail"
+      )
       .in("visit_id", ids);
     for (const a of (ans ?? []) as (AnswerRow & { visit_id: string })[]) {
       let m = answersByVisit.get(a.visit_id);
@@ -274,7 +277,19 @@ export const buildZiyaret: ReportBuilder = async (supabase, f, opts) => {
     };
     const am = answersByVisit.get(v.id as string);
     for (const ques of questions)
-      row[headerFor(ques)] = resolveAnswer(ques, am?.get(ques.id), optMaps.get(ques.id));
+      {
+        const ans = am?.get(ques.id);
+        const base = resolveAnswer(ques, ans, optMaps.get(ques.id));
+        // Append the free text behind "Diğer" — otherwise it is invisible in
+        // every report even though the rep typed it.
+        const detail = ans?.value_detail?.trim();
+        row[headerFor(ques)] =
+          detail && base != null
+            ? `${base} (${detail})`
+            : detail && base == null
+              ? detail
+              : base;
+      }
     const pm = productByVisit.get(v.id as string);
     for (const c of categories)
       row[`Ürün: ${c.label_tr}`] = pm?.get(c.id)?.join(", ") ?? "";

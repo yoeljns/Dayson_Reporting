@@ -143,7 +143,10 @@ export default async function ReportsPage({
                     {preview.headers.map((h) => {
                       const v = row[h];
                       return (
-                        <td key={h} className="whitespace-nowrap p-2">
+                        <td
+                          key={h}
+                          className="min-w-[8rem] max-w-[28rem] whitespace-pre-wrap break-words p-2 align-top"
+                        >
                           {v == null || v === "" ? "—" : String(v)}
                         </td>
                       );

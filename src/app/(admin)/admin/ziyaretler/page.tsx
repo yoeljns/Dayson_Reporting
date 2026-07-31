@@ -21,6 +21,7 @@ type Row = {
   visit_type: VisitType;
   status: VisitStatus;
   visit_date: string;
+  company_id: string;
   companies: { name: string; city: string | null } | { name: string; city: string | null }[] | null;
   salesperson: { full_name: string } | { full_name: string }[] | null;
 };
@@ -54,7 +55,7 @@ export default async function ManagerVisitHistoryPage({
   let query = supabase
     .from("visits")
     .select(
-      "id, visit_type, status, visit_date, companies(name, city), salesperson:salesperson_id(full_name)"
+      "id, visit_type, status, visit_date, company_id, companies(name, city), salesperson:salesperson_id(full_name)"
     )
     .is("deleted_at", null)
     .order("visit_date", { ascending: false })
@@ -216,7 +217,7 @@ export default async function ManagerVisitHistoryPage({
                     className="flex min-w-0 flex-1 items-center justify-between gap-2 hover:opacity-80"
                   >
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{company?.name}</div>
+                      <div className="font-medium">{company?.name}</div>
                       <div className="text-xs text-muted-foreground">
                         {VISIT_TYPE_LABELS[v.visit_type]} · {v.visit_date} ·{" "}
                         {sp?.full_name ?? "—"}
@@ -229,6 +230,15 @@ export default async function ManagerVisitHistoryPage({
                       {VISIT_STATUS_LABELS[v.status]}
                     </Badge>
                   </Link>
+                  {v.company_id && (
+                    <Link
+                      href={`/admin/bayi/${v.company_id}`}
+                      className="shrink-0 text-sm text-primary hover:underline"
+                      title="Bayi dosyası"
+                    >
+                      Bayi
+                    </Link>
+                  )}
                   {isAdmin && <AdminVisitDeleteButton visitId={v.id} />}
                 </CardContent>
               </Card>

@@ -75,3 +75,29 @@ h3,
     min-height: 44px;
   }
 }
+
+/* Printing a dealer/salesperson file: drop the app chrome, keep the content.
+   Cards must not be split across pages — a half-printed visit is unreadable. */
+@media print {
+  header,
+  nav {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  main,
+  .container {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+  [class*="rounded-lg"][class*="border"] {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+}

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -208,6 +209,14 @@ function UserRow({
             {!user.is_active && <Badge variant="secondary">Pasif</Badge>}
           </div>
           <div className="text-xs text-muted-foreground">{user.email}</div>
+          {user.role === "salesperson" && (
+            <Link
+              href={`/admin/pazarlamaci/${user.id}`}
+              className="text-xs text-primary hover:underline"
+            >
+              Dosyasını aç →
+            </Link>
+          )}
           {nameErr && <p className="text-xs text-destructive">{nameErr}</p>}
         </div>
         <div className="flex items-center gap-2">
