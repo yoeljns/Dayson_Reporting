@@ -75,9 +75,13 @@ export function VisitRecord({
         </div>
       )}
 
-      {contact && (
-        <Field label="Görüşülen kişi" value={contact} />
+      {/* With the header hidden the surrounding page still needs to say who
+          made the visit, so surface it as a field instead of losing it. */}
+      {!showHeader && visit.salesperson && (
+        <Field label="Pazarlamacı" value={visit.salesperson} />
       )}
+
+      {contact && <Field label="Görüşülen kişi" value={contact} />}
 
       {rows.length === 0 ? (
         <p className="text-muted-foreground">Bu ziyarette cevap kaydedilmemiş.</p>

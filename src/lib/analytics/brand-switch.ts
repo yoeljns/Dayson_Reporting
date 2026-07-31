@@ -24,6 +24,8 @@ export type BrandTransition = {
   fromLabel: string;
   toLabel: string;
   salesperson: string;
+  /** Who made the visit that completed the flip — match on this, not the name. */
+  salespersonId: string | null;
   won: boolean; // true = kazanım, false = kayıp
 };
 
@@ -58,6 +60,7 @@ type Snapshot = {
   ownLabels: string[];
   otherLabels: string[];
   salesperson: string;
+  salespersonId: string | null;
 };
 
 /** A dealer "has us" in a category when any of our own brands was recorded. */
@@ -130,7 +133,7 @@ export async function analyzeBrandSwitch(
   let vq = supabase
     .from("visits")
     .select(
-      "id, visit_date, created_at, company_id, companies!inner(name, deleted_at), salesperson:salesperson_id(full_name)"
+      "id, visit_date, created_at, company_id, salesperson_id, companies!inner(name, deleted_at), salesperson:salesperson_id(full_name)"
     )
     .eq("status", "tamamlandi")
     .is("deleted_at", null)
@@ -152,6 +155,7 @@ export async function analyzeBrandSwitch(
     visit_date: string;
     created_at: string;
     company_id: string;
+    salesperson_id: string | null;
     companies: { name: string } | { name: string }[] | null;
     salesperson: { full_name: string } | { full_name: string }[] | null;
   };
@@ -199,6 +203,7 @@ export async function analyzeBrandSwitch(
         ownLabels: [],
         otherLabels: [],
         salesperson: one(v.salesperson)?.full_name ?? "",
+        salespersonId: v.salesperson_id ?? null,
       };
       byKeyVisit.set(key, snap);
     }
@@ -249,6 +254,7 @@ export async function analyzeBrandSwitch(
         fromLabel: labelOf(prev),
         toLabel: labelOf(cur),
         salesperson: cur.salesperson,
+        salespersonId: cur.salespersonId,
         won: isOurs(cur),
       });
     }

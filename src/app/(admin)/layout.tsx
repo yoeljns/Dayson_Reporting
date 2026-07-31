@@ -48,7 +48,7 @@ export default async function AdminLayout({
           offline drafts they made while reporting. */}
       <OfflineSync />
       <div className="container py-4">
-        <div className="mb-4 flex flex-wrap items-center gap-2 overflow-x-auto border-b pb-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2 overflow-x-auto border-b pb-2 print:hidden">
           {opsLinks.map((l) => (
             <Link
               key={l.href}

@@ -68,12 +68,15 @@ export default async function VisitDetailPage({
     { data: cats },
     { data: pcb },
     { data: products },
+    { data: allCats },
+    { data: allBrands },
     { data: contacts },
   ] = await Promise.all([
+    // All questions, not just active ones: a since-retired question may still
+    // hold an answer on an old visit, and the read view must show it.
     supabase
       .from("questions")
       .select("*, question_options(*)")
-      .eq("is_active", true)
       .order("sort_order"),
     supabase.from("visit_answers").select("*").eq("visit_id", params.id),
     supabase
@@ -108,6 +111,10 @@ export default async function VisitDetailPage({
       .from("visit_product_answers")
       .select("category_id, brand_id, supply_kind")
       .eq("visit_id", params.id),
+    // Full catalogs — a product answer may point at a since-retired category
+    // or brand, which must still render with its real name.
+    supabase.from("product_categories").select("id, label_tr"),
+    supabase.from("product_brands").select("id, name"),
     company
       ? supabase
           .from("company_contacts")
@@ -117,8 +124,10 @@ export default async function VisitDetailPage({
       : Promise.resolve({ data: [] as unknown[] }),
   ]);
 
-  // Filter questions by visit type + company kind (null = all).
-  const applicable = ((questions as QuestionWithOptions[]) ?? []).filter((q) => {
+  const allQuestions = (questions as QuestionWithOptions[]) ?? [];
+  // The wizard only offers questions that are active AND apply to this visit.
+  const applicable = allQuestions.filter((q) => {
+    if (!q.is_active) return false;
     if (q.applies_to && !q.applies_to.includes(visit.visit_type)) return false;
     if (
       q.applies_to_kind &&
@@ -180,14 +189,17 @@ export default async function VisitDetailPage({
   const one = <T,>(r: T | T[] | null | undefined): T | null =>
     Array.isArray(r) ? r[0] ?? null : r ?? null;
   const catLabels = new Map(
-    ((cats as { id: string; label_tr: string }[] | null) ?? []).map((c) => [
+    ((allCats as { id: string; label_tr: string }[] | null) ?? []).map((c) => [
       c.id,
       c.label_tr,
     ])
   );
-  const brandNames = new Map<string, string>();
-  for (const list of brandsByCat.values())
-    for (const b of list) brandNames.set(b.brandId, b.name);
+  const brandNames = new Map(
+    ((allBrands as { id: string; name: string }[] | null) ?? []).map((b) => [
+      b.id,
+      b.name,
+    ])
+  );
   const recordProducts = (
     (products as {
       category_id: string;
@@ -253,7 +265,7 @@ export default async function VisitDetailPage({
                     role: string | null;
                   } | null
                 )?.role,
-                questions: applicable,
+                questions: allQuestions,
                 answers: (answers as VisitAnswer[]) ?? [],
                 products: recordProducts,
               }}

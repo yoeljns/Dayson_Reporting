@@ -58,7 +58,7 @@ export default async function DealerFilePage({
     )
     .eq("id", companyId)
     .maybeSingle();
-  if (!company) notFound();
+  if (!company || company.deleted_at) notFound();
 
   const [
     { data: visitRows },
@@ -68,6 +68,7 @@ export default async function DealerFilePage({
     { data: observations },
     { data: questionRows },
     { data: cats },
+    { data: lastVisitRow },
     brand,
   ] = await Promise.all([
     supabase
@@ -112,6 +113,12 @@ export default async function DealerFilePage({
       .select("*, question_options(*)")
       .order("sort_order"),
     supabase.from("product_categories").select("id, label_tr"),
+    // Real lifetime totals — the visit list below is only the newest page.
+    supabase
+      .from("company_last_visit")
+      .select("last_visit_date, visit_count")
+      .eq("company_id", companyId)
+      .maybeSingle(),
     analyzeBrandSwitch(supabase, "2000-01-01", todayIso(), {
       companyIds: [companyId],
     }),
@@ -273,7 +280,13 @@ export default async function DealerFilePage({
                   : "Hiç ziyaret edilmemiş"
               }
             />
-            <Fact label="Toplam ziyaret" value={String(visits.length)} />
+            <Fact
+              label="Toplam ziyaret"
+              value={String(
+                (lastVisitRow as { visit_count?: number } | null)?.visit_count ??
+                  visits.length
+              )}
+            />
           </dl>
 
           {company.notes && (
@@ -367,7 +380,8 @@ export default async function DealerFilePage({
       <section className="space-y-2" id="gecmis-ziyaretler">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">
-            Önceki ziyaretler ({older.length})
+            Önceki ziyaretler ({older.length}
+            {visits.length >= HISTORY_LIMIT ? ` — en yeni ${HISTORY_LIMIT}` : ""})
           </h2>
           {older.length > 0 && <ExpandAll targetId="gecmis-ziyaretler" />}
         </div>

@@ -46,6 +46,14 @@ function rangeFor(key: PeriodKey): { start: string; end: string } {
 
 const VISIT_LIMIT = 40;
 
+/** Calendar date of a timestamptz in the team's timezone (see week.ts). */
+const TR_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Istanbul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function one<T>(r: T | T[] | null | undefined): T | null {
   return Array.isArray(r) ? r[0] ?? null : r ?? null;
 }
@@ -71,9 +79,19 @@ export default async function SalespersonFilePage({
     .maybeSingle();
   if (!profile) notFound();
 
+  // Assigned dealers first: their ids scope the last-visit lookup below, so we
+  // never pull the whole company_last_visit table to serve one rep.
+  const { data: assignRows } = await supabase
+    .from("assignments")
+    .select("company_id, companies(id, name, city, segment)")
+    .eq("salesperson_id", spId)
+    .limit(2000);
+  const assignedIds = ((assignRows ?? []) as { company_id: string }[]).map(
+    (a) => a.company_id
+  );
+
   const [
     { data: visitRows },
-    { data: assignRows },
     { data: lastVisits },
     { data: plans },
     { data: complaints },
@@ -93,15 +111,12 @@ export default async function SalespersonFilePage({
       .lte("visit_date", end)
       .order("visit_date", { ascending: false })
       .limit(VISIT_LIMIT),
-    supabase
-      .from("assignments")
-      .select("company_id, companies(id, name, city, segment)")
-      .eq("salesperson_id", spId)
-      .limit(2000),
-    supabase
-      .from("company_last_visit")
-      .select("company_id, last_visit_date")
-      .limit(20000),
+    assignedIds.length
+      ? supabase
+          .from("company_last_visit")
+          .select("company_id, last_visit_date")
+          .in("company_id", assignedIds)
+      : Promise.resolve({ data: [] as unknown[] }),
     supabase
       .from("visit_plans")
       .select("id, week_start, status, submitted_at, visit_plan_items(count)")
@@ -114,7 +129,7 @@ export default async function SalespersonFilePage({
       .select("id, title, status, due_date, created_at")
       .eq("reported_by", spId)
       .eq("is_draft", false)
-      .gte("created_at", `${start}T00:00:00Z`)
+      .gte("created_at", `${isoDaysAgo(1, start)}T00:00:00Z`)
       .order("created_at", { ascending: false })
       .limit(50),
     supabase
@@ -238,16 +253,30 @@ export default async function SalespersonFilePage({
       return b.gap - a.gap; // stalest first
     });
 
+  // The visit LIST is paged (VISIT_LIMIT); the period totals come from the
+  // untruncated id-only query so the tiles never saturate at the page size.
+  const periodVisits = (periodVisitRows ?? []) as { company_id: string }[];
+  const periodVisitCount = periodVisits.length;
+
+  // The query bound is padded by a day (UTC vs TR); trim to the exact TR window.
+  const myComplaints = ((complaints ?? []) as {
+    id: string;
+    title: string;
+    status: string;
+    due_date: string | null;
+    created_at: string;
+  }[]).filter((c) => TR_DATE.format(new Date(c.created_at)) >= start);
+
   const coveredCount = dealers.filter((d) => d.inPeriod > 0).length;
   const coveragePct =
     dealers.length > 0 ? Math.round((coveredCount / dealers.length) * 100) : 0;
 
   // Wins/losses this rep drove: transitions on the dealers they visited.
   const brand = await analyzeBrandSwitch(supabase, start, end, {
-    companyIds: [...new Set(visits.map((v) => v.company_id))],
+    companyIds: [...new Set(periodVisits.map((v) => v.company_id))],
   });
   const myTransitions = brand.transitions.filter(
-    (t) => t.salesperson === profile.full_name
+    (t) => t.salespersonId === spId
   );
   const won = myTransitions.filter((t) => t.won).length;
   const lost = myTransitions.length - won;
@@ -315,7 +344,7 @@ export default async function SalespersonFilePage({
 
       {/* Özet */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Tamamlanan ziyaret" value={visits.length} />
+        <Stat label="Tamamlanan ziyaret" value={periodVisitCount} />
         <Stat label="Sorumlu bayi" value={dealers.length} />
         <Stat label="Dönemde ziyaret edilen" value={`%${coveragePct}`} />
         <Stat
@@ -390,7 +419,10 @@ export default async function SalespersonFilePage({
       <section className="space-y-2" id="rep-ziyaretler">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">
-            Ziyaretleri ({visits.length})
+            Ziyaretleri ({periodVisitCount}
+            {periodVisitCount > visits.length
+              ? ` — en yeni ${visits.length}`
+              : ""})
           </h2>
           {older.length > 0 && <ExpandAll targetId="rep-ziyaretler" />}
         </div>
@@ -477,13 +509,13 @@ export default async function SalespersonFilePage({
           <h2 className="text-lg font-semibold">Açtığı şikayetler</h2>
           <Card>
             <CardContent className="pt-4">
-              {!complaints || complaints.length === 0 ? (
+              {myComplaints.length === 0 ? (
                 <p className="text-muted-foreground">
                   Bu dönemde şikayet açmamış.
                 </p>
               ) : (
                 <ul className="space-y-2">
-                  {complaints.map((c) => (
+                  {myComplaints.map((c) => (
                     <li key={c.id} className="flex items-start justify-between gap-2">
                       <Link
                         href={`/sikayet/${c.id}`}
