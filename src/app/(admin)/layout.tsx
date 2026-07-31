@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireManager } from "@/lib/auth";
 import { AppNav } from "@/components/app-nav";
+import { OfflineSync } from "@/components/offline-sync";
 import { ensureSchema } from "@/lib/bootstrap";
 import { isManagementMode } from "@/lib/ui-mode";
 
@@ -43,6 +44,9 @@ export default async function AdminLayout({
         fullName={profile.full_name || profile.email}
         managementMode={isManagementMode(profile)}
       />
+      {/* Managers land here in management mode — keep flushing any queued
+          offline drafts they made while reporting. */}
+      <OfflineSync />
       <div className="container py-4">
         <div className="mb-4 flex flex-wrap items-center gap-2 overflow-x-auto border-b pb-2">
           {opsLinks.map((l) => (

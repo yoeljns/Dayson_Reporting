@@ -52,11 +52,24 @@ type ObsRow = {
 /** One dealer's state in one category at one point in time. */
 type Snapshot = {
   date: string;
-  ours: boolean;
-  /** Human label of what they carry ("Akfix", "Kendi üretimi", …). */
-  label: string;
+  /** created_at of the visit — tiebreak when a dealer is visited twice a day. */
+  seq: string;
+  /** Brands of ours seen in this visit, and everything else, both sorted. */
+  ownLabels: string[];
+  otherLabels: string[];
   salesperson: string;
 };
+
+/** A dealer "has us" in a category when any of our own brands was recorded. */
+function isOurs(s: Snapshot): boolean {
+  return s.ownLabels.length > 0;
+}
+
+/** What to print for a snapshot: our brands when we're in, else the rivals. */
+function labelOf(s: Snapshot): string {
+  const list = isOurs(s) ? s.ownLabels : s.otherLabels;
+  return list.length > 0 ? list.join(", ") : "—";
+}
 
 function one<T>(r: T | T[] | null | undefined): T | null {
   return Array.isArray(r) ? r[0] ?? null : r ?? null;
@@ -110,19 +123,25 @@ export async function analyzeBrandSwitch(
     ).map((l) => [`${l.category_id}|${l.brand_id}`, l.is_own])
   );
 
-  // 2) Every completed visit up to `end` (full history — see doc comment).
+  // 2) Completed visits up to `end`, newest first so that hitting FETCH_CAP
+  //    drops ANCIENT history rather than the period we are reporting on.
+  //    Deleted dealers are excluded (!inner + deleted_at is null).
   const { data: visitRows } = await supabase
     .from("visits")
-    .select("id, visit_date, company_id, companies(name), salesperson:salesperson_id(full_name)")
+    .select(
+      "id, visit_date, created_at, company_id, companies!inner(name, deleted_at), salesperson:salesperson_id(full_name)"
+    )
     .eq("status", "tamamlandi")
     .is("deleted_at", null)
+    .is("companies.deleted_at", null)
     .lte("visit_date", end)
-    .order("visit_date", { ascending: true })
+    .order("visit_date", { ascending: false })
     .limit(FETCH_CAP);
 
   type VisitRow = {
     id: string;
     visit_date: string;
+    created_at: string;
     company_id: string;
     companies: { name: string } | { name: string }[] | null;
     salesperson: { full_name: string } | { full_name: string }[] | null;
@@ -163,21 +182,23 @@ export async function analyzeBrandSwitch(
           "—";
 
     const key = `${v.company_id}|${o.category_id}|${o.visit_id}`;
-    const prev = byKeyVisit.get(key);
-    if (!prev) {
-      byKeyVisit.set(key, {
+    let snap = byKeyVisit.get(key);
+    if (!snap) {
+      snap = {
         date: v.visit_date,
-        ours,
-        label,
+        seq: v.created_at,
+        ownLabels: [],
+        otherLabels: [],
         salesperson: one(v.salesperson)?.full_name ?? "",
-      });
-    } else {
-      // Multiple brands in one category: ours wins the state, labels join.
-      prev.label = prev.label === label ? prev.label : `${prev.label}, ${label}`;
-      if (ours && !prev.ours) {
-        prev.ours = true;
-        prev.label = label; // when we're in, name us as the carried brand
-      }
+      };
+      byKeyVisit.set(key, snap);
+    }
+    // A category can hold several brands in one visit. Collect them into stable
+    // sorted buckets so the rendered labels never depend on row order.
+    const bucket = ours ? snap.ownLabels : snap.otherLabels;
+    if (!bucket.includes(label)) {
+      bucket.push(label);
+      bucket.sort((a, b) => a.localeCompare(b, "tr"));
     }
   }
 
@@ -199,24 +220,27 @@ export async function analyzeBrandSwitch(
     const [companyId, categoryId] = k.split("|");
     const cat = catLabel.get(categoryId);
     if (!cat) continue; // inactive/removed category
-    const snaps = snapsRaw.sort((a, b) => (a.date < b.date ? -1 : 1));
+    // Oldest first; same-day visits are ordered by created_at so the direction
+    // of a same-day flip is deterministic rather than a coin flip.
+    const snaps = snapsRaw.sort(
+      (a, b) => a.date.localeCompare(b.date) || a.seq.localeCompare(b.seq)
+    );
 
     // Every state flip along the timeline is a transition point.
     for (let i = 1; i < snaps.length; i++) {
       const prev = snaps[i - 1];
       const cur = snaps[i];
-      if (prev.ours === cur.ours) continue;
+      if (isOurs(prev) === isOurs(cur)) continue;
       if (cur.date < start || cur.date > end) continue; // outside the period
       transitions.push({
         date: cur.date,
         companyId,
         companyName: "", // filled in below from the visit rows
-
         categoryLabel: cat.label_tr,
-        fromLabel: prev.label,
-        toLabel: cur.label,
+        fromLabel: labelOf(prev),
+        toLabel: labelOf(cur),
         salesperson: cur.salesperson,
-        won: cur.ours,
+        won: isOurs(cur),
       });
     }
 
@@ -234,7 +258,13 @@ export async function analyzeBrandSwitch(
       companyName.set(v.company_id, one(v.companies)?.name ?? "");
   }
   for (const t of transitions) t.companyName = companyName.get(t.companyId) ?? "";
-  transitions.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
+  // Newest first, with stable tiebreaks so the list never reshuffles.
+  transitions.sort(
+    (a, b) =>
+      b.date.localeCompare(a.date) ||
+      a.companyName.localeCompare(b.companyName, "tr") ||
+      a.categoryLabel.localeCompare(b.categoryLabel, "tr")
+  );
 
   // 6) Current share per category.
   const share: CategoryShare[] = [];
@@ -244,9 +274,9 @@ export async function analyzeBrandSwitch(
     let oursDealers = 0;
     const competitor = new Map<string, number>();
     for (const snap of perCompany.values()) {
-      if (snap.ours) oursDealers++;
+      if (isOurs(snap)) oursDealers++;
       else
-        for (const name of snap.label.split(", "))
+        for (const name of snap.otherLabels)
           competitor.set(name, (competitor.get(name) ?? 0) + 1);
     }
     share.push({

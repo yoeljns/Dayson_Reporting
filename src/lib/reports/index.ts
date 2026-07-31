@@ -23,6 +23,8 @@ export type FilterKind =
   | "category"; // product category select
 
 export type ReportDef = {
+  /** Scans full history; excluded from the "all reports" bundle to keep it fast. */
+  heavy?: boolean;
   label: string;
   filenameBase: string;
   filters: FilterKind[];
@@ -77,6 +79,7 @@ export const REPORTS: Record<string, ReportDef> = {
     filenameBase: "kazanim-kayip",
     filters: ["range"],
     build: buildKazanim,
+    heavy: true,
   },
 };
 

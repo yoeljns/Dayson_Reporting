@@ -24,6 +24,33 @@ export type CoverageAnalysis = {
   bySegment: GroupRow[];
 };
 
+/** Set of dealers with at least one completed visit inside [start, end]. */
+async function fetchVisitedCompanyIds(
+  supabase: SupabaseClient,
+  start: string,
+  end: string
+): Promise<Set<string>> {
+  const PAGE = 1000;
+  const MAX_PAGES = 50; // 50k visits — far beyond any real period
+  const ids = new Set<string>();
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, error } = await supabase
+      .from("visits")
+      .select("company_id")
+      .eq("status", "tamamlandi")
+      .is("deleted_at", null)
+      .gte("visit_date", start)
+      .lte("visit_date", end)
+      .order("visit_date", { ascending: true })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    if (error) break;
+    const rows = (data ?? []) as { company_id: string }[];
+    for (const r of rows) ids.add(r.company_id);
+    if (rows.length < PAGE) break;
+  }
+  return ids;
+}
+
 const BUCKETS: { label: string; max: number | null }[] = [
   { label: "0-15 gün", max: 15 },
   { label: "16-30 gün", max: 30 },
@@ -36,27 +63,21 @@ export async function analyzeCoverage(
   start: string,
   end: string
 ): Promise<CoverageAnalysis> {
-  const [{ data: dealers }, { data: lastVisits }, { data: periodVisits }] =
-    await Promise.all([
-      supabase
-        .from("companies")
-        .select("id, name, city, segment")
-        .eq("kind", "distributor")
-        .is("deleted_at", null)
-        .limit(DEALER_CAP),
-      supabase
-        .from("company_last_visit")
-        .select("company_id, last_visit_date")
-        .limit(DEALER_CAP),
-      supabase
-        .from("visits")
-        .select("company_id")
-        .eq("status", "tamamlandi")
-        .is("deleted_at", null)
-        .gte("visit_date", start)
-        .lte("visit_date", end)
-        .limit(DEALER_CAP),
-    ]);
+  const [{ data: dealers }, { data: lastVisits }, visitedIds] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("id, name, city, segment")
+      .eq("kind", "distributor")
+      .is("deleted_at", null)
+      .limit(DEALER_CAP),
+    supabase
+      .from("company_last_visit")
+      .select("company_id, last_visit_date")
+      .limit(DEALER_CAP),
+    // A long period can hold more visits than a single page: walk them all,
+    // otherwise an arbitrary slice would understate every coverage figure.
+    fetchVisitedCompanyIds(supabase, start, end),
+  ]);
 
   const lastVisit = new Map(
     (
@@ -66,9 +87,7 @@ export async function analyzeCoverage(
       }[]
     ).map((r) => [r.company_id, r.last_visit_date])
   );
-  const visitedInPeriod = new Set(
-    ((periodVisits ?? []) as { company_id: string }[]).map((v) => v.company_id)
-  );
+  const visitedInPeriod = visitedIds;
 
   const rows = (dealers ?? []) as {
     id: string;
@@ -127,11 +146,11 @@ export async function analyzeCoverage(
         neverVisited: a.never,
       }))
       // Worst coverage first — that is where a manager needs to look.
-      .sort(
-        (x, y) =>
-          x.visited / x.dealers - y.visited / y.dealers ||
-          y.dealers - x.dealers
-      );
+      .sort((x, y) => {
+        const rx = x.dealers > 0 ? x.visited / x.dealers : 0;
+        const ry = y.dealers > 0 ? y.visited / y.dealers : 0;
+        return rx - ry || y.dealers - x.dealers;
+      });
 
   return {
     totalDealers: rows.length,

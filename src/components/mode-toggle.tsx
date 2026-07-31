@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, PencilLine } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,25 +20,41 @@ export function ModeToggle({
   className?: string;
 }) {
   const router = useRouter();
-  const [on, setOn] = useState(managementMode);
+  // Optimistic override on top of the server value. Two instances of this
+  // button can be on screen at once (header + /hesap card), so the server prop
+  // stays the source of truth and the override is dropped as soon as it lands.
+  const [optimistic, setOptimistic] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const on = optimistic ?? managementMode;
+
+  useEffect(() => setOptimistic(null), [managementMode]);
 
   function toggle() {
     const next = !on;
-    setOn(next); // optimistic — the header must not feel laggy
+    setOptimistic(next); // the header must not feel laggy
+    setError(null);
     startTransition(async () => {
-      const res = await setManagementMode(next);
-      if (res.error) {
-        setOn(!next);
-        return;
+      try {
+        const res = await setManagementMode(next);
+        if (res.error) {
+          setOptimistic(null);
+          setError(res.error);
+          return;
+        }
+        router.replace(next ? "/admin" : "/");
+        router.refresh();
+      } catch {
+        // Offline / network drop: undo the optimistic flip and say so.
+        setOptimistic(null);
+        setError("Bağlantı yok, mod değiştirilemedi.");
       }
-      router.replace(next ? "/admin" : "/");
-      router.refresh();
     });
   }
 
   return (
-    <button
+    <span className="flex flex-col items-end gap-0.5">
+      <button
       type="button"
       onClick={toggle}
       disabled={pending}
@@ -61,6 +77,10 @@ export function ModeToggle({
         <PencilLine className="h-4 w-4 shrink-0" />
       )}
       <span>{on ? "Yönetim" : "Raporlama"}</span>
-    </button>
+      </button>
+      {error && (
+        <span className="text-xs text-destructive">{error}</span>
+      )}
+    </span>
   );
 }

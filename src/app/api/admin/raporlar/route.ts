@@ -38,6 +38,9 @@ export async function GET(request: Request) {
     const notes: { Bilgi: string }[] = [];
     for (const t of REPORT_ORDER) {
       const def = REPORTS[t];
+      // Heavy reports (full-history scans) stay out of the combined workbook —
+      // they are downloadable on their own.
+      if (def.heavy) continue;
       const res = await def.build(supabase, filters);
       appendSheet(wb, res.sheetName, res.rows, res.headers);
       if (res.capped)

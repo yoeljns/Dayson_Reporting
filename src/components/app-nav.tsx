@@ -62,11 +62,16 @@ export function AppNav({
       ];
   const homeHref = managementMode ? "/admin" : "/";
 
-  // Highlight the single most specific match (e.g. /ziyaretler vs /).
+  // Highlight the single most specific match (e.g. /ziyaretler vs /). In
+  // management mode "/admin" is the Pano tab, so it must match exactly —
+  // otherwise every admin subpage (Bayiler, Raporlar…) would light up Pano.
+  const exactOnly = managementMode ? ["/", "/admin"] : ["/"];
   const activeHref = items
     .map((i) => i.href)
     .filter((h) =>
-      h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(h + "/")
+      exactOnly.includes(h)
+        ? pathname === h
+        : pathname === h || pathname.startsWith(h + "/")
     )
     .sort((a, b) => b.length - a.length)[0];
 
