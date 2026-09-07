@@ -4,6 +4,9 @@ import { requireProfile } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ComplaintStatusChanger } from "@/components/complaint-status-changer";
+import { RecordPhotos } from "@/components/visit-photos";
+import { getPhotosFor } from "@/lib/photos/server";
+import { complaintCode } from "@/lib/codes";
 import {
   COMPLAINT_TYPE_LABELS,
   COMPLAINT_STATUS_LABELS,
@@ -33,7 +36,7 @@ export default async function ComplaintDetailPage({
   const { data: c } = await supabase
     .from("complaints")
     .select(
-      "id, type, owner_dept, status, title, description, priority, due_date, created_at, is_draft, complainant_name, complainant_phone, companies(name), reporter:reported_by(full_name)"
+      "id, type, owner_dept, status, title, description, priority, due_date, created_at, is_draft, complainant_name, complainant_phone, reported_by, companies(name), reporter:reported_by(full_name)"
     )
     .eq("id", params.id)
     .single();
@@ -41,11 +44,16 @@ export default async function ComplaintDetailPage({
   // Drafts have no timeline/status yet — they are resumed from the form instead.
   if (!c || c.is_draft) notFound();
 
-  const { data: events } = await supabase
-    .from("complaint_events")
-    .select("id, from_status, to_status, note, created_at, actor:actor_id(full_name)")
-    .eq("complaint_id", params.id)
-    .order("created_at", { ascending: true });
+  const [{ data: events }, photos] = await Promise.all([
+    supabase
+      .from("complaint_events")
+      .select("id, from_status, to_status, note, created_at, actor:actor_id(full_name)")
+      .eq("complaint_id", params.id)
+      .order("created_at", { ascending: true }),
+    getPhotosFor("complaint", params.id),
+  ]);
+  const canEditPhotos =
+    c.reported_by === profile.id || profile.role !== "salesperson";
 
   const company = Array.isArray(c.companies)
     ? c.companies[0]
@@ -60,6 +68,8 @@ export default async function ComplaintDetailPage({
         <div>
           <h1 className="text-lg font-semibold">{c.title}</h1>
           <p className="text-sm text-muted-foreground">
+            <span className="font-mono text-xs">{complaintCode(c.id)}</span>
+            {" · "}
             {c.complainant_name || company?.name || "—"}
           </p>
         </div>
@@ -94,6 +104,14 @@ export default async function ComplaintDetailPage({
           <div className="pt-2">
             <div className="text-muted-foreground">Açıklama</div>
             <p className="whitespace-pre-wrap">{c.description}</p>
+          </div>
+          <div className="pt-2">
+            <RecordPhotos
+              refTable="complaint"
+              refId={c.id}
+              photos={photos}
+              canEdit={canEditPhotos}
+            />
           </div>
         </CardContent>
       </Card>

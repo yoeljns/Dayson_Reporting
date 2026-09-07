@@ -23,6 +23,8 @@ import type { QuestionWithOptions, VisitAnswer, CompanyContact } from "@/types/d
 import type { CompanyKind, VisitType } from "@/lib/enums";
 import { applicableQuestions } from "@/lib/visit-questions";
 import { visitCode } from "@/lib/codes";
+import { getPhotosFor } from "@/lib/photos/server";
+import { RecordPhotos } from "@/components/visit-photos";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -52,6 +54,8 @@ export default async function VisitDetailPage({
 
   if (!visit) notFound();
   const isOwner = visit.salesperson_id === profile.id;
+  const photos = await getPhotosFor("visit", visit.id);
+  const canEditPhotos = isOwner || profile.role !== "salesperson";
 
   const company = Array.isArray(visit.companies)
     ? visit.companies[0]
@@ -272,6 +276,14 @@ export default async function VisitDetailPage({
                 products: recordProducts,
               }}
             />
+            <div className="mt-4">
+              <RecordPhotos
+                refTable="visit"
+                refId={visit.id}
+                photos={photos}
+                canEdit={canEditPhotos}
+              />
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -294,6 +306,14 @@ export default async function VisitDetailPage({
         contacts={(contacts as CompanyContact[]) ?? []}
         currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}
+        extraSlot={
+          <RecordPhotos
+            refTable="visit"
+            refId={visit.id}
+            photos={photos}
+            canEdit
+          />
+        }
       />
       )}
 

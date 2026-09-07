@@ -21,6 +21,8 @@ const DEPT_BY_TYPE: Record<ComplaintType, ComplaintOwnerDept> = {
 
 export async function saveComplaint(input: {
   id?: string | null;
+  /** Client-generated uuid for a NEW record (offline replay idempotency). */
+  clientId?: string | null;
   companyId?: string | null;
   complainantName?: string | null;
   complainantPhone?: string | null;
@@ -98,11 +100,28 @@ export async function saveComplaint(input: {
   } else {
     const { data, error } = await supabase
       .from("complaints")
-      .insert({ ...row, reported_by: user.id })
+      .insert({
+        ...(input.clientId ? { id: input.clientId } : {}),
+        ...row,
+        reported_by: user.id,
+      })
       .select("id")
       .single();
-    if (error) return { error: error.message };
-    id = data.id;
+    if (error) {
+      // Replay of an already-saved record → update it instead.
+      if (error.code === "23505" && input.clientId) {
+        id = input.clientId;
+        const { error: updErr } = await supabase
+          .from("complaints")
+          .update({ ...row, updated_at: new Date().toISOString() })
+          .eq("id", id);
+        if (updErr) return { error: updErr.message };
+      } else {
+        return { error: error.message };
+      }
+    } else {
+      id = data.id;
+    }
   }
 
   // Opening event for the timeline — only once the complaint is finalized.

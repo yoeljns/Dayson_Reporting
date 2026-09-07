@@ -15,6 +15,8 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { Badge } from "@/components/ui/badge";
 import { newId } from "@/lib/uuid";
+import { attachPhotos } from "@/app/(app)/foto/actions";
+import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +57,7 @@ function NewCompetitorObservationForm() {
   const [product, setProduct] = useState<PickedProduct | null>(null);
   const [productName, setProductName] = useState("");
   const [visitDate, setVisitDate] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [price, setPrice] = useState("");
   const [city, setCity] = useState("");
   const [note, setNote] = useState("");
@@ -162,6 +165,20 @@ function NewCompetitorObservationForm() {
           setError(res.error ?? "Kaydedilemedi.");
           return;
         }
+        const uploaded = photos.filter((p) => p.status === "uploaded");
+        if (uploaded.length > 0) {
+          const att = await attachPhotos({
+            refTable: "competitor_observation",
+            refId: res.id,
+            photos: uploaded.map(({ documentId, path, mime, sizeBytes }) => ({
+              documentId,
+              path,
+              mime,
+              sizeBytes,
+            })),
+          });
+          if (att.error) toast(`Fotoğraflar eklenemedi: ${att.error}`, "warn");
+        }
         // Drafts and resumed records go back to the list; a fresh finalize
         // stays so the rep can log another observation quickly.
         if (isDraft || editId) {
@@ -171,6 +188,7 @@ function NewCompetitorObservationForm() {
         toast("Rakip bilgisi kaydedildi", "ok");
         setSuccess(true);
         setClientId(newId());
+        setPhotos([]);
         setProduct(null);
         setProductName("");
         setPrice("");
@@ -274,6 +292,16 @@ function NewCompetitorObservationForm() {
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Fotoğraf (raf, etiket, fiyat)</Label>
+            <PhotoUploader
+              refTable="competitor_observation"
+              refId={editId ?? clientId}
+              value={photos}
+              onChange={setPhotos}
             />
           </div>
 

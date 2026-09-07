@@ -18,6 +18,11 @@ import {
   type ComplaintType,
 } from "@/lib/enums";
 import { saveComplaint } from "../actions";
+import { attachPhotos } from "@/app/(app)/foto/actions";
+import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
+import { useToast } from "@/components/ui/toast";
+import { newId } from "@/lib/uuid";
+import { complaintCode } from "@/lib/codes";
 
 export default function NewComplaintPage() {
   return (
@@ -37,12 +42,17 @@ function KeyedComplaintForm() {
 
 function NewComplaintForm() {
   const router = useRouter();
+  const { toast } = useToast();
   const params = useSearchParams();
   const presetCompany = params.get("company");
   const visitId = params.get("visit");
   const draftId = params.get("draft");
+  const returnTo = params.get("return");
 
+  // Fixed for the life of the form: a retried submit updates, never duplicates.
+  const [clientId] = useState(() => newId());
   const [editId, setEditId] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [company, setCompany] = useState<PickedCompany | null>(null);
   const [complainantName, setComplainantName] = useState("");
   const [complainantPhone, setComplainantPhone] = useState("");
@@ -140,6 +150,7 @@ function NewComplaintForm() {
       try {
         const res = await saveComplaint({
           id: editId,
+          clientId: editId ? null : clientId,
           companyId: company?.id ?? null,
           complainantName: complainantName || null,
           complainantPhone: complainantPhone || null,
@@ -155,7 +166,26 @@ function NewComplaintForm() {
           setError(res.error ?? "Şikayet kaydedilemedi.");
           return;
         }
-        router.push(isDraft ? "/sikayetler" : `/sikayet/${res.id}`);
+        const uploaded = photos.filter((p) => p.status === "uploaded");
+        if (uploaded.length > 0) {
+          const att = await attachPhotos({
+            refTable: "complaint",
+            refId: res.id,
+            photos: uploaded.map(({ documentId, path, mime, sizeBytes }) => ({
+              documentId,
+              path,
+              mime,
+              sizeBytes,
+            })),
+          });
+          if (att.error) toast(`Fotoğraflar eklenemedi: ${att.error}`, "warn");
+        }
+        if (!isDraft) toast(`Kayıt açıldı · ${complaintCode(res.id)}`, "ok");
+        router.push(
+          isDraft ? returnTo || "/sikayetler" : `/sikayet/${res.id}${
+            returnTo ? `?return=${encodeURIComponent(returnTo)}` : ""
+          }`
+        );
       } catch {
         setError(
           "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
@@ -265,6 +295,16 @@ function NewComplaintForm() {
               Bağlıysa ilk 3 harfi yazıp distribütörü seçin; distribütör dışı yeni
               firmayı ekleyebilirsiniz.
             </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Fotoğraf</Label>
+            <PhotoUploader
+              refTable="complaint"
+              refId={editId ?? clientId}
+              value={photos}
+              onChange={setPhotos}
+            />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
