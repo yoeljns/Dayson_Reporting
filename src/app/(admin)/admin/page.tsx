@@ -15,8 +15,19 @@ import {
   formatTRDate,
 } from "@/lib/week";
 import { groupAssignments, repsLabel } from "@/lib/assignments";
+import { getStaleDays, getPaceThresholds } from "@/lib/settings";
+import { targetsForYear } from "@/lib/targets/server";
+import { elapsedFractionOfYear, paceOf, sumLines, fmtEur } from "@/lib/rules/target";
+import { PaceBadge } from "@/components/target-view";
+import { stockCountCode } from "@/lib/codes";
+import {
+  PLAN_STATUS_LABELS,
+  PLAN_STATUS_BADGE,
+  COMPANY_KIND_LABELS,
+  type PlanStatus,
+  type CompanyKind,
+} from "@/lib/enums";
 
-const STALE_DAYS = 30;
 // Dealer/visit universe for one distributor network — far above any real count,
 // so the coverage tallies below are effectively exact (not silently truncated).
 const DEALER_CAP = 20000;
@@ -44,7 +55,9 @@ export default async function ManagerDashboardPage() {
   const today = todayIso();
   const weekStart = currentWeekStart();
   const weekEnd = weekEndOf(weekStart);
+  const [STALE_DAYS, paceThresholds] = await Promise.all([getStaleDays(), getPaceThresholds()]);
   const staleCutoff = isoDaysAgo(STALE_DAYS, today);
+  const year = Number(today.slice(0, 4));
 
   const [
     { data: distributors },
@@ -60,6 +73,12 @@ export default async function ManagerDashboardPage() {
     { data: overdueList },
     { data: pendingPlanList },
     { data: allProfiles },
+    { data: fieldCompanies },
+    { count: surveyAnswersWeek },
+    { data: recentCounts },
+    targets,
+    { data: todayPlanItems },
+    { data: todayVisitRows },
   ] = await Promise.all([
     supabase
       .from("companies")
@@ -138,7 +157,68 @@ export default async function ManagerDashboardPage() {
     // ALL profiles (incl. deactivated/managers) so assignment labels never show
     // "Atanmamış" for a dealer that is actually assigned to a deactivated rep.
     supabase.from("profiles").select("id, full_name"),
+    // Companies registered from the field this week.
+    supabase
+      .from("companies")
+      .select("id, name, kind, city, created_by, created_at")
+      .neq("kind", "distributor")
+      .is("deleted_at", null)
+      .gte("created_at", `${weekStart}T00:00:00`)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("survey_answers")
+      .select("id", { count: "exact", head: true })
+      .gte("answered_at", weekStart)
+      .lte("answered_at", weekEnd),
+    supabase
+      .from("stock_counts")
+      .select("id, counted_at, company_id, companies(name), salesperson:salesperson_id(full_name), stock_count_lines(pallets)")
+      .order("counted_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(5),
+    targetsForYear(supabase, year),
+    // Today's planned items (this week's plans) — for plan adherence per rep.
+    supabase
+      .from("visit_plan_items")
+      .select("company_id, visit_plans!inner(salesperson_id, week_start)")
+      .eq("visit_plans.week_start", weekStart)
+      .eq("planned_date", today)
+      .limit(DEALER_CAP),
+    supabase
+      .from("visits")
+      .select("salesperson_id, company_id")
+      .eq("visit_date", today)
+      .is("deleted_at", null)
+      .limit(DEALER_CAP),
   ]);
+
+  // Plan adherence: planned today vs. actually visited today, per rep.
+  const plannedToday = new Map<string, Set<string>>();
+  for (const it of (todayPlanItems ?? []) as unknown as {
+    company_id: string;
+    visit_plans: { salesperson_id: string } | { salesperson_id: string }[] | null;
+  }[]) {
+    const vp = Array.isArray(it.visit_plans) ? it.visit_plans[0] : it.visit_plans;
+    if (!vp) continue;
+    (plannedToday.get(vp.salesperson_id) ?? plannedToday.set(vp.salesperson_id, new Set()).get(vp.salesperson_id)!).add(it.company_id);
+  }
+  const visitedToday = new Map<string, Set<string>>();
+  for (const v of todayVisitRows ?? []) {
+    (visitedToday.get(v.salesperson_id) ?? visitedToday.set(v.salesperson_id, new Set()).get(v.salesperson_id)!).add(v.company_id);
+  }
+
+  // Dealers behind their yearly target (lowest pace first).
+  const elapsed = elapsedFractionOfYear(year, today);
+  const dealerName = new Map(((distributors ?? []) as { id: string; name: string }[]).map((d) => [d.id, d.name]));
+  const behindTargets = Array.from(targets.values())
+    .filter((t) => t.status !== "iptal" && t.lines.length > 0)
+    .map((t) => {
+      const tot = sumLines(t.lines);
+      return { t, tot, pace: paceOf(tot.actual_eur, tot.target_eur, elapsed, paceThresholds) };
+    })
+    .filter((x) => x.pace.pace === "geride")
+    .sort((a, b) => (a.pace.paceRatio ?? 0) - (b.pace.paceRatio ?? 0));
 
   // Dealer coverage: which distributors are unassigned or long-unvisited.
   const assignedTo = groupAssignments(assignments);
@@ -162,13 +242,13 @@ export default async function ManagerDashboardPage() {
     });
 
   // Per-salesperson tallies for the team summary.
-  const assignedPerSp = new Map<string, number>();
+  const assignedPerSp = new Map<string, { owner: number; backup: number }>();
   for (const a of assignments ?? []) {
-    if (a.salesperson_id)
-      assignedPerSp.set(
-        a.salesperson_id,
-        (assignedPerSp.get(a.salesperson_id) ?? 0) + 1
-      );
+    if (!a.salesperson_id) continue;
+    const cur = assignedPerSp.get(a.salesperson_id) ?? { owner: 0, backup: 0 };
+    if ((a.role ?? "owner") === "owner") cur.owner++;
+    else cur.backup++;
+    assignedPerSp.set(a.salesperson_id, cur);
   }
   const visitsPerSp = new Map<string, number>();
   for (const v of weekVisits ?? []) {
@@ -183,13 +263,23 @@ export default async function ManagerDashboardPage() {
     if (p.salesperson_id) planPerSp.set(p.salesperson_id, p.status as string);
   }
 
-  const team = (salespeople ?? []).map((sp) => ({
-    id: sp.id,
-    name: sp.full_name,
-    assigned: assignedPerSp.get(sp.id) ?? 0,
-    visits: visitsPerSp.get(sp.id) ?? 0,
-    plan: planPerSp.get(sp.id) ?? null,
-  }));
+  const team = (salespeople ?? []).map((sp) => {
+    const planned = plannedToday.get(sp.id) ?? new Set<string>();
+    const visited = visitedToday.get(sp.id) ?? new Set<string>();
+    let done = 0;
+    planned.forEach((c) => {
+      if (visited.has(c)) done++;
+    });
+    return {
+      id: sp.id,
+      name: sp.full_name,
+      assigned: assignedPerSp.get(sp.id) ?? { owner: 0, backup: 0 },
+      visits: visitsPerSp.get(sp.id) ?? 0,
+      plan: (planPerSp.get(sp.id) as PlanStatus | undefined) ?? null,
+      plannedToday: planned.size,
+      doneToday: done,
+    };
+  });
 
   const queues = [
     {
@@ -213,7 +303,7 @@ export default async function ManagerDashboardPage() {
     {
       label: "Atanmamış bayi",
       value: unassignedCount,
-      href: "/admin/bayiler",
+      href: "/admin/firmalar?tur=distributor&atama=yok",
       alert: unassignedCount > 0,
     },
     {
@@ -228,6 +318,18 @@ export default async function ManagerDashboardPage() {
       href: `/admin/ziyaretler?status=tamamlandi&date=${today}`,
       alert: false,
     },
+    {
+      label: "Sahadan eklenen firma (bu hafta)",
+      value: fieldCompanies?.length ?? 0,
+      href: "/admin/firmalar?tur=non_customer",
+      alert: false,
+    },
+    {
+      label: "Özel rapor cevabı (bu hafta)",
+      value: surveyAnswersWeek ?? 0,
+      href: "/admin/anketler",
+      alert: false,
+    },
   ];
 
   const quickReports = [
@@ -238,6 +340,8 @@ export default async function ManagerDashboardPage() {
     { label: "Bu ay performans", href: "/api/admin/raporlar?type=performans" },
     { label: "Son 30 gün şikayet", href: "/api/admin/raporlar?type=sikayet" },
     { label: "Bayi kapsama", href: "/api/admin/raporlar?type=kapsama" },
+    { label: "Stok durumu", href: "/api/admin/raporlar?type=stok" },
+    { label: `Hedefler ${year}`, href: `/api/admin/raporlar?type=hedef&year=${year}` },
   ];
 
   const overdue = (overdueList ?? []) as OverdueRow[];
@@ -256,7 +360,7 @@ export default async function ManagerDashboardPage() {
         <h2 className="text-sm font-medium text-muted-foreground">
           Bekleyen işler
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
           {queues.map((q) => (
             <Link key={q.label} href={q.href}>
               <Card
@@ -284,7 +388,7 @@ export default async function ManagerDashboardPage() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-muted-foreground">Takip</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <FollowUpCard
             title="Geciken şikayetler"
             emptyText="Geciken şikayet yok."
@@ -374,12 +478,97 @@ export default async function ManagerDashboardPage() {
                       {weekRangeLabel(p.week_start)} · {count} firma
                     </span>
                   </span>
-                  <Badge variant="success" className="shrink-0">
-                    Gönderildi
+                  <Badge variant="default" className="shrink-0">
+                    Onay bekliyor
                   </Badge>
                 </Link>
               );
             })}
+          </FollowUpCard>
+
+          <FollowUpCard
+            title="Son stok sayımları"
+            emptyText="Henüz stok sayımı yok."
+            allHref="/admin/stok"
+          >
+            {((recentCounts ?? []) as unknown as {
+              id: string;
+              counted_at: string;
+              company_id: string;
+              companies: { name: string } | { name: string }[] | null;
+              salesperson: { full_name: string } | { full_name: string }[] | null;
+              stock_count_lines: { pallets: number }[] | null;
+            }[]).map((c) => {
+              const co = Array.isArray(c.companies) ? c.companies[0] : c.companies;
+              const sp = Array.isArray(c.salesperson) ? c.salesperson[0] : c.salesperson;
+              const total = (c.stock_count_lines ?? []).reduce((a, l) => a + Number(l.pallets), 0);
+              return (
+                <Link
+                  key={c.id}
+                  href={`/admin/bayi/${c.company_id}`}
+                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{co?.name ?? "Bayi"}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {formatTRDate(c.counted_at)} · {sp?.full_name ?? "—"} · {stockCountCode(c.id)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-sm font-medium tabular-nums">
+                    {total.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} palet
+                  </span>
+                </Link>
+              );
+            })}
+          </FollowUpCard>
+
+          <FollowUpCard
+            title={`Hedefte geride kalan bayiler (${year})`}
+            emptyText="Hedefin gerisinde bayi yok."
+            allHref={`/admin/hedefler?year=${year}`}
+          >
+            {behindTargets.slice(0, 5).map(({ t, tot, pace }) => (
+              <Link
+                key={t.id}
+                href={`/admin/hedefler/${t.company_id}/${year}`}
+                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">
+                    {dealerName.get(t.company_id) ?? "Bayi"}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {fmtEur(tot.actual_eur)} / {fmtEur(tot.target_eur)} · %
+                    {Math.round((pace.ratio ?? 0) * 100)}
+                  </span>
+                </span>
+                <PaceBadge pace={pace.pace} />
+              </Link>
+            ))}
+          </FollowUpCard>
+
+          <FollowUpCard
+            title="Sahadan eklenen firmalar (bu hafta)"
+            emptyText="Bu hafta sahadan firma eklenmedi."
+            allHref="/admin/firmalar"
+          >
+            {((fieldCompanies ?? []) as { id: string; name: string; kind: CompanyKind; city: string | null; created_by: string | null }[])
+              .slice(0, 5)
+              .map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/admin/bayi/${c.id}`}
+                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{c.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {COMPANY_KIND_LABELS[c.kind]}
+                      {c.city ? ` · ${c.city}` : ""} · {c.created_by ? spName.get(c.created_by) ?? "—" : "—"}
+                    </span>
+                  </span>
+                </Link>
+              ))}
           </FollowUpCard>
         </div>
       </section>
@@ -394,16 +583,21 @@ export default async function ManagerDashboardPage() {
               <thead className="border-b bg-muted/50 text-left">
                 <tr>
                   <th className="p-2">Pazarlamacı</th>
-                  <th className="p-2 text-right">Atanan bayi</th>
+                  <th className="p-2 text-right" title="Sorumlu olduğu bayi (+ yedek olduğu)">
+                    Atanan bayi
+                  </th>
                   <th className="p-2 text-right">Bu hafta ziyaret</th>
-                  <th className="p-2">Plan</th>
+                  <th className="p-2 text-right" title="Bugüne planlanan / yapılan">
+                    Bugünkü plan
+                  </th>
+                  <th className="p-2">Haftalık plan</th>
                 </tr>
               </thead>
               <tbody>
                 {team.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="p-6 text-center text-muted-foreground"
                     >
                       Aktif pazarlamacı yok.
@@ -420,13 +614,25 @@ export default async function ManagerDashboardPage() {
                           {t.name}
                         </Link>
                       </td>
-                      <td className="p-2 text-right">{t.assigned}</td>
-                      <td className="p-2 text-right">{t.visits}</td>
+                      <td className="p-2 text-right tabular-nums">
+                        {t.assigned.owner}
+                        {t.assigned.backup > 0 && (
+                          <span className="text-muted-foreground"> +{t.assigned.backup}</span>
+                        )}
+                      </td>
+                      <td className="p-2 text-right tabular-nums">{t.visits}</td>
+                      <td className="p-2 text-right tabular-nums">
+                        {t.plannedToday === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <span className={t.doneToday >= t.plannedToday ? "text-[hsl(var(--success))]" : ""}>
+                            {t.doneToday} / {t.plannedToday}
+                          </span>
+                        )}
+                      </td>
                       <td className="p-2">
-                        {t.plan === "gonderildi" ? (
-                          <Badge variant="success">Gönderildi</Badge>
-                        ) : t.plan === "taslak" ? (
-                          <Badge variant="warning">Taslak</Badge>
+                        {t.plan ? (
+                          <Badge variant={PLAN_STATUS_BADGE[t.plan]}>{PLAN_STATUS_LABELS[t.plan]}</Badge>
                         ) : (
                           <Badge variant="secondary">Yok</Badge>
                         )}
