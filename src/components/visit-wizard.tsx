@@ -75,6 +75,7 @@ export function VisitWizard({
   initialCompleted,
   addonSurveys = [],
   extraSlot,
+  stepHints = {},
 }: {
   visitId: string;
   isOwner: boolean;
@@ -96,6 +97,9 @@ export function VisitWizard({
   addonSurveys?: { id: string; name: string }[];
   /** Rendered inside the notes step (e.g. the photo uploader). */
   extraSlot?: React.ReactNode;
+  /** Info line shown above a question step, keyed by question code
+   *  (e.g. "Hedefin gerisinde" on the next-action step). */
+  stepHints?: Partial<Record<string, string>>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -493,6 +497,11 @@ export function VisitWizard({
             </div>
           )}
 
+          {current?.kind === "question" && stepHints[current.q.code] && (
+            <p className="mb-3 rounded-md border border-[hsl(var(--gold))]/40 bg-[hsl(var(--gold-soft))] p-2.5 text-sm text-[hsl(var(--gold))]">
+              {stepHints[current.q.code]}
+            </p>
+          )}
           {current?.kind === "question" && (
             <QuestionStep
               q={current.q}

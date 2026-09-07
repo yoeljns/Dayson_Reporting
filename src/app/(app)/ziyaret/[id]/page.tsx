@@ -25,6 +25,10 @@ import { applicableQuestions } from "@/lib/visit-questions";
 import { visitCode } from "@/lib/codes";
 import { getPhotosFor } from "@/lib/photos/server";
 import { surveyMatches } from "@/lib/rules/survey";
+import { getTargetFor } from "@/lib/targets/server";
+import { elapsedFractionOfYear, paceOf, sumLines, fmtEur } from "@/lib/rules/target";
+import { getPaceThresholds } from "@/lib/settings";
+import { todayIso } from "@/lib/week";
 import type { Survey } from "@/types/db";
 import { RecordPhotos } from "@/components/visit-photos";
 
@@ -78,6 +82,27 @@ export default async function VisitDetailPage({
       : Promise.resolve({ data: null }),
   ]);
   const canEditPhotos = isOwner || profile.role !== "salesperson";
+
+  // "Hedefin gerisinde" nudge on the next-action step (dealers only).
+  const stepHints: Partial<Record<string, string>> = {};
+  if (isOwner && company?.kind === "distributor") {
+    const today = todayIso();
+    const year = Number(today.slice(0, 4));
+    const [target, thresholds] = await Promise.all([
+      getTargetFor(supabase, company.id, year),
+      getPaceThresholds(),
+    ]);
+    if (target && target.status !== "iptal" && target.lines.length > 0) {
+      const tot = sumLines(target.lines);
+      const pace = paceOf(tot.actual_eur, tot.target_eur, elapsedFractionOfYear(year, today), thresholds);
+      if (pace.pace === "geride")
+        stepHints.sonraki_aksiyon = `Hedefin gerisinde: ${year} hedefi ${fmtEur(
+          tot.target_eur
+        )}, gerçekleşen ${fmtEur(tot.actual_eur)} (beklenenin ${fmtEur(
+          pace.gap
+        )} altında). Aksiyonu buna göre seç.`;
+    }
+  }
   const addonSurveys = ((activeSurveys as Survey[] | null) ?? [])
     .filter((s) =>
       surveyMatches(s, {
@@ -328,6 +353,7 @@ export default async function VisitDetailPage({
         currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}
         addonSurveys={addonSurveys}
+        stepHints={stepHints}
         extraSlot={
           <RecordPhotos
             refTable="visit"

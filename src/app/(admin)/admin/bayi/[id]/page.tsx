@@ -11,6 +11,14 @@ import { ExpandAll } from "@/components/expand-all";
 import { analyzeBrandSwitch } from "@/lib/analytics/brand-switch";
 import { formatTRY, cn } from "@/lib/utils";
 import { formatTRDate, daysSince, todayIso } from "@/lib/week";
+import { TargetView } from "@/components/target-view";
+import { StockHistory } from "@/components/stock-history";
+import { getTargetFor } from "@/lib/targets/server";
+import { elapsedFractionOfYear } from "@/lib/rules/target";
+import { getPaceThresholds } from "@/lib/settings";
+import { countedSkus, companyCountHistory } from "@/lib/stock/server";
+import { getPhotosForMany } from "@/lib/photos/server";
+import { PhotoGrid } from "@/components/photo-grid";
 import {
   VISIT_TYPE_LABELS,
   COMPANY_KIND_LABELS,
@@ -222,6 +230,20 @@ export default async function DealerFilePage({
   const older = visits.slice(1);
   const lastGap = last ? daysSince(last.visit_date) : null;
 
+  // Dealer-only extras: yearly target, stock counts, visit photos.
+  const isDealer = company.kind === "distributor";
+  const year = Number(todayIso().slice(0, 4));
+  const [target, thresholds, skuCols, stockHistory, visitPhotos, { data: activeCats }] =
+    await Promise.all([
+      isDealer ? getTargetFor(supabase, companyId, year) : Promise.resolve(null),
+      getPaceThresholds(),
+      isDealer ? countedSkus(supabase) : Promise.resolve([]),
+      isDealer ? companyCountHistory(supabase, companyId, 8) : Promise.resolve([]),
+      getPhotosForMany("visit", visits.map((v) => v.id)),
+      supabase.from("product_categories").select("id, label_tr").order("sort_order"),
+    ]);
+  const targetElapsed = elapsedFractionOfYear(year, todayIso());
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 text-[15px] leading-relaxed sm:text-base">
       <Link
@@ -312,6 +334,40 @@ export default async function DealerFilePage({
         </CardContent>
       </Card>
 
+      {isDealer && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Hedef {year}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TargetView
+              target={target}
+              categories={(activeCats as { id: string; label_tr: string }[] | null) ?? []}
+              elapsed={targetElapsed}
+              thresholds={thresholds}
+              compact
+            />
+            <Link
+              href={`/admin/hedefler/${companyId}/${year}`}
+              className="mt-2 inline-block text-sm underline print:hidden"
+            >
+              Hedefi düzenle
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {isDealer && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Stok sayımları</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StockHistory counts={stockHistory} skus={skuCols} />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Son ziyaret — açık ve tam */}
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Son ziyaret notları</h2>
@@ -323,8 +379,14 @@ export default async function DealerFilePage({
           </Card>
         ) : (
           <Card>
-            <CardContent className="pt-5">
+            <CardContent className="space-y-4 pt-5">
               <VisitRecord visit={toRecord(last)} />
+              {(visitPhotos[last.id]?.length ?? 0) > 0 && (
+                <div>
+                  <div className="mb-1 text-sm font-medium">Fotoğraflar</div>
+                  <PhotoGrid photos={visitPhotos[last.id]} />
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -425,8 +487,11 @@ export default async function DealerFilePage({
                         Aç
                       </span>
                     </summary>
-                    <div className="border-t p-4">
+                    <div className="space-y-4 border-t p-4">
                       <VisitRecord visit={toRecord(v)} showHeader={false} />
+                      {(visitPhotos[v.id]?.length ?? 0) > 0 && (
+                        <PhotoGrid photos={visitPhotos[v.id]} size="sm" />
+                      )}
                     </div>
                   </details>
                 </CardContent>

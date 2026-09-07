@@ -18,6 +18,7 @@ const adminLinks = [
   { href: "/admin/bayiler", label: "Bayiler", adminOnly: false, group: "ops" },
   { href: "/admin/anketler", label: "Özel Raporlar", adminOnly: false, group: "ops" },
   { href: "/admin/stok", label: "Stok Durumu", adminOnly: false, group: "ops" },
+  { href: "/admin/hedefler", label: "Hedefler", adminOnly: false, group: "ops" },
   { href: "/admin/silinen-ziyaretler", label: "Silinenler", adminOnly: false, group: "ops" },
   { href: "/admin/import", label: "Excel İçe Aktar", adminOnly: true, group: "cfg" },
   { href: "/admin/kullanicilar", label: "Kullanıcılar", adminOnly: true, group: "cfg" },
