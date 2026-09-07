@@ -3,9 +3,16 @@
 -- the order step from the wizard.
 -- Idempotent — bundled into PATCH_SQL.
 -- ============================================================================
--- "Hizmet veren bayi" now applies to prospects and sub-dealers.
-update questions set applies_to_kind = array['non_customer','sub_dealer']::company_kind[]
- where code = 'hiz_veren_bayi';
+-- "Hizmet veren bayi" now applies to prospects and sub-dealers (guarded once so
+-- a later admin choice survives replays).
+do $$ begin
+  if not exists (select 1 from app_settings where key = 'hiz_veren_bayi_kinds_v1') then
+    update questions set applies_to_kind = array['non_customer','sub_dealer']::company_kind[]
+     where code = 'hiz_veren_bayi';
+    insert into app_settings (key, value) values ('hiz_veren_bayi_kinds_v1', 'true'::jsonb)
+    on conflict (key) do nothing;
+  end if;
+end $$;
 -- The order step is gone; its questions become plain optional extras (guarded once
 -- so a later admin choice survives replays).
 do $$ begin
