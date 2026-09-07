@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { cookies } from "next/headers";
 import { supabaseUrl, supabaseAnonKey } from "@/lib/supabase/env";
+import { THEME_COOKIE, parseTheme } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "Dayson Raporlama",
@@ -33,8 +35,9 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const theme = parseTheme(cookies().get(THEME_COOKIE)?.value);
   return (
-    <html lang="tr">
+    <html lang="tr" className={theme === "dark" ? "dark" : undefined}>
       <body>
         <Providers
           supabaseUrl={supabaseUrl()}

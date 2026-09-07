@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, Swords, Plus } from "lucide-react";
+import { AlertTriangle, Swords, Plus, Boxes, ClipboardList } from "lucide-react";
+import { PrintButton } from "@/components/print-button";
+import { stockCountCode } from "@/lib/codes";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { VisitWizard } from "@/components/visit-wizard";
@@ -103,6 +105,18 @@ export default async function VisitDetailPage({
         )} altında). Aksiyonu buna göre seç.`;
     }
   }
+  const [{ data: stockCounts }, { data: surveyAnswers }] = await Promise.all([
+    supabase
+      .from("stock_counts")
+      .select("id, counted_at, note, stock_count_lines(pallets)")
+      .eq("visit_id", visit.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("survey_answers")
+      .select("id, answered_at, survey_id, surveys(name)")
+      .eq("visit_id", visit.id)
+      .order("created_at", { ascending: false }),
+  ]);
   const addonSurveys = ((activeSurveys as Survey[] | null) ?? [])
     .filter((s) =>
       surveyMatches(s, {
@@ -279,10 +293,13 @@ export default async function VisitDetailPage({
               : ""}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <Badge variant={visit.status === "taslak" ? "warning" : "success"}>
-            {VISIT_STATUS_LABELS[visit.status as keyof typeof VISIT_STATUS_LABELS]}
-          </Badge>
+        <div className="flex flex-col items-end gap-1 print:hidden">
+          <div className="flex items-center gap-2">
+            {visit.status === "tamamlandi" && <PrintButton />}
+            <Badge variant={visit.status === "taslak" ? "warning" : "success"}>
+              {VISIT_STATUS_LABELS[visit.status as keyof typeof VISIT_STATUS_LABELS]}
+            </Badge>
+          </div>
           {isOwner && (
             <DeleteVisitButton
               visitId={visit.id}
@@ -404,6 +421,79 @@ export default async function VisitDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* Stok sayımları — bu ziyarete bağlı */}
+      {(company?.kind === "distributor" || (stockCounts ?? []).length > 0) && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="section-label flex items-center gap-2">
+              <Boxes className="h-3.5 w-3.5" />
+              Stok Sayımı
+            </CardTitle>
+            {isOwner && (
+              <Link href={`/stok/yeni?${linkParams}&return=${encodeURIComponent(`/ziyaret/${visit.id}`)}`}>
+                <Button variant="outline" size="sm">
+                  <Plus className="mr-1 h-4 w-4" /> Ekle
+                </Button>
+              </Link>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {!stockCounts || stockCounts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Bu ziyarette stok sayımı yok.</p>
+            ) : (
+              stockCounts.map((sc) => {
+                const total = ((sc.stock_count_lines as { pallets: number }[] | null) ?? []).reduce(
+                  (a, l) => a + Number(l.pallets),
+                  0
+                );
+                return (
+                  <Link
+                    key={sc.id}
+                    href={`/firma/${company?.id}?tab=stok`}
+                    className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-accent"
+                  >
+                    <span>
+                      {stockCountCode(sc.id)}
+                      {sc.note ? <span className="text-muted-foreground"> · {sc.note}</span> : null}
+                    </span>
+                    <span className="font-medium tabular-nums">
+                      {total.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} palet
+                    </span>
+                  </Link>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Özel raporlar — bu ziyarete bağlı */}
+      {(surveyAnswers ?? []).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="section-label flex items-center gap-2">
+              <ClipboardList className="h-3.5 w-3.5" />
+              Özel Raporlar
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(surveyAnswers ?? []).map((a) => {
+              const sv = one(a.surveys as unknown as { name: string } | { name: string }[] | null);
+              return (
+                <Link
+                  key={a.id}
+                  href={`/anket/${a.survey_id}?company=${company?.id}&visit=${visit.id}&return=${encodeURIComponent(`/ziyaret/${visit.id}`)}`}
+                  className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-accent"
+                >
+                  <span>{sv?.name ?? "Özel rapor"}</span>
+                  <Badge variant="success">Dolduruldu</Badge>
+                </Link>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Rakip bilgileri — bu ziyarete bağlı */}
       <Card>

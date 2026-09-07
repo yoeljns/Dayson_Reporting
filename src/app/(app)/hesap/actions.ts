@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { THEME_COOKIE, parseTheme } from "@/lib/theme";
 import { requireProfile } from "@/lib/auth";
 import { canSwitchMode } from "@/lib/ui-mode";
 
@@ -45,5 +47,18 @@ export async function changePassword(input: {
     password: input.password,
   });
   if (error) return { error: error.message };
+  return { ok: true };
+}
+
+/** Light / dark theme, stored in a cookie so it applies before hydration. */
+export async function setTheme(
+  theme: "light" | "dark"
+): Promise<{ ok?: boolean; error?: string }> {
+  cookies().set(THEME_COOKIE, parseTheme(theme), {
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: "lax",
+  });
+  revalidatePath("/", "layout");
   return { ok: true };
 }

@@ -32,6 +32,33 @@
   --success-soft: 96 22% 89%;
 }
 
+/* Koyu tema — same warm palette, inverted. Toggled from Hesabım via the
+   `dark` class on <html> (set server-side from a cookie, no flash). */
+.dark {
+  --background: 30 8% 10%;
+  --foreground: 36 20% 92%;
+  --card: 30 8% 14%;
+  --card-foreground: 36 20% 92%;
+  --primary: 1.6 63% 56%;
+  --primary-foreground: 40 65% 97%;
+  --secondary: 30 7% 20%;
+  --secondary-foreground: 36 20% 92%;
+  --muted: 30 7% 20%;
+  --muted-foreground: 36 10% 65%;
+  --accent: 30 7% 22%;
+  --accent-foreground: 36 20% 92%;
+  --destructive: 2.6 69% 52%;
+  --destructive-foreground: 40 65% 97%;
+  --border: 30 7% 24%;
+  --input: 30 7% 26%;
+  --ring: 1.6 63% 56%;
+  --gold: 43 70% 62%;
+  --gold-soft: 43 30% 18%;
+  --success: 96 35% 62%;
+  --success-soft: 96 18% 18%;
+  color-scheme: dark;
+}
+
 * {
   border-color: hsl(var(--border));
 }

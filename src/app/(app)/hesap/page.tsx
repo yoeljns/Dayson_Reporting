@@ -1,6 +1,9 @@
 import { requireProfile } from "@/lib/auth";
 import { ChangePasswordForm } from "@/components/change-password-form";
 import { ModeToggle } from "@/components/mode-toggle";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { cookies } from "next/headers";
+import { THEME_COOKIE, parseTheme } from "@/lib/theme";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { canSwitchMode, isManagementMode } from "@/lib/ui-mode";
 import { USER_ROLE_LABELS } from "@/lib/enums";
@@ -8,6 +11,7 @@ import { USER_ROLE_LABELS } from "@/lib/enums";
 export default async function AccountPage() {
   const profile = await requireProfile();
   const managementMode = isManagementMode(profile);
+  const theme = parseTheme(cookies().get(THEME_COOKIE)?.value);
 
   return (
     <div className="mx-auto max-w-md space-y-4">
@@ -47,6 +51,18 @@ export default async function AccountPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Görünüm</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Koyu tema gece kullanımında gözü yormaz; seçim bu cihazda kalır.
+          </p>
+          <ThemeToggle theme={theme} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

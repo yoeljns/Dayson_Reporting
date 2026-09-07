@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Phone, Users, ArrowLeft, Plus } from "lucide-react";
 import { CompanySearch } from "@/components/company-search";
 import { CompanyRegisterForm } from "@/components/company-register-form";
@@ -26,7 +27,16 @@ import { enqueueVisit } from "@/lib/offline";
 type Selected = { id: string; name: string };
 
 export default function NewVisitPage() {
+  return (
+    <Suspense>
+      <NewVisitForm />
+    </Suspense>
+  );
+}
+
+function NewVisitForm() {
   const router = useRouter();
+  const presetCompany = useSearchParams().get("company");
   const today = todayIso();
   const [kind, setKind] = useState<CompanyKind>("distributor");
   const [selected, setSelected] = useState<Selected | null>(null);
@@ -35,6 +45,20 @@ export default function NewVisitPage() {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const canRegister = (FIELD_REGISTRABLE_KINDS as readonly string[]).includes(kind);
+
+  // Started from a company card / today's plan → skip the search step.
+  useEffect(() => {
+    if (!presetCompany) return;
+    const supabase = createClient();
+    supabase
+      .from("companies")
+      .select("id, name")
+      .eq("id", presetCompany)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setSelected({ id: data.id as string, name: data.name as string });
+      });
+  }, [presetCompany]);
 
   function handlePickType(visitType: VisitType) {
     if (!selected) return;

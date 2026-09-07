@@ -7,7 +7,7 @@ import {
   ClipboardList,
   CalendarDays,
   AlertTriangle,
-  Swords,
+  Building2,
   Shield,
   LayoutDashboard,
   BarChart3,
@@ -22,10 +22,10 @@ import type { UserRole } from "@/lib/enums";
 
 const navItems = [
   { href: "/", label: "Ana Sayfa", icon: Home },
+  { href: "/firmalar", label: "Firmalar", icon: Building2 },
   { href: "/ziyaretler", label: "Ziyaretler", icon: ClipboardList },
   { href: "/plan", label: "Plan", icon: CalendarDays },
   { href: "/sikayetler", label: "Şikayetler", icon: AlertTriangle },
-  { href: "/rakip", label: "Rakip", icon: Swords },
 ];
 
 // Management mode: oversight only, no data-entry screens. Same tab count as the
@@ -66,12 +66,13 @@ export function AppNav({
   // management mode "/admin" is the Pano tab, so it must match exactly —
   // otherwise every admin subpage (Bayiler, Raporlar…) would light up Pano.
   const exactOnly = managementMode ? ["/", "/admin"] : ["/"];
+  const path = pathname.startsWith("/firma/") ? "/firmalar" : pathname;
   const activeHref = items
     .map((i) => i.href)
     .filter((h) =>
       exactOnly.includes(h)
-        ? pathname === h
-        : pathname === h || pathname.startsWith(h + "/")
+        ? path === h
+        : path === h || path.startsWith(h + "/")
     )
     .sort((a, b) => b.length - a.length)[0];
 
