@@ -28,6 +28,7 @@ import {
   answerIsComplete,
   missingRequired,
   conditionalSkip,
+  contactRequired as contactRequiredRule,
 } from "@/lib/visit-questions";
 import {
   CONTACT_ROLES,
@@ -57,9 +58,12 @@ type StepDef =
   | { kind: "products" };
 
 /** Codes that get a dedicated step; everything else renders as an extra question. */
-const HANDLED_CODES = new Set(["ziyaret_amaci", "hiz_veren_bayi", "serbest_not"]);
-/** Kinds where "hizmet veren bayi" (who supplies this point) makes sense. */
-const SERVICED_KINDS: CompanyKind[] = ["sub_dealer", "non_customer"];
+const HANDLED_CODES = new Set([
+  "ziyaret_amaci",
+  "hiz_veren_bayi",
+  "serbest_not",
+  "gorusulen_kisi_rolu", // answered through the contact step
+]);
 
 export function VisitWizard({
   visitId,
@@ -210,9 +214,11 @@ export function VisitWizard({
     out.push({ kind: "contact" });
     if (visitType === "yuz_yuze" && catOptions.length > 0)
       out.push({ kind: "products" });
+    // Which kinds get "hizmet veren bayi" is decided by the question's
+    // applies_to_kind (the questions prop is already filtered) — the same rule
+    // the server applies, so a required step can never be hidden here.
     const hiz = byCode.get("hiz_veren_bayi");
-    if (hiz && SERVICED_KINDS.includes(companyKind))
-      out.push({ kind: "question", q: hiz });
+    if (hiz) out.push({ kind: "question", q: hiz });
     for (const q of questions) {
       if (HANDLED_CODES.has(q.code)) continue;
       if (skipConditional(q)) continue;
@@ -221,7 +227,7 @@ export function VisitWizard({
     const notes = byCode.get("serbest_not");
     if (notes) out.push({ kind: "question", q: notes });
     return out;
-  }, [byCode, catOptions.length, questions, visitType, companyKind, skipConditional]);
+  }, [byCode, catOptions.length, questions, visitType, skipConditional]);
 
   const total = steps.length;
   // A conditional question can vanish mid-flow — never point past the end.
@@ -230,7 +236,7 @@ export function VisitWizard({
   }, [step, total]);
   const current = steps[Math.min(step, total - 1)];
 
-  const contactRequired = byCode.get("gorusulen_kisi_rolu")?.is_required ?? false;
+  const contactRequired = contactRequiredRule(questions);
 
   /** Whether the CURRENT step allows moving on ("Devam" stays disabled). */
   function stepValid(s: StepDef | undefined): boolean {

@@ -1955,4 +1955,38 @@ begin
   return new;
 end;
 $$;
+
+-- 8) allow_repeat=false is enforced across reps (RLS hides colleagues' rows).
+create or replace function survey_answered_by_anyone(p_survey_id uuid, p_company_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from survey_answers
+                  where survey_id = p_survey_id and company_id = p_company_id)
+$$;
+create or replace function assert_survey_repeat()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from surveys s where s.id = new.survey_id and s.allow_repeat = false)
+     and exists (select 1 from survey_answers a
+                  where a.survey_id = new.survey_id and a.company_id = new.company_id
+                    and a.id <> new.id) then
+    raise exception 'Bu rapor bu firma için zaten dolduruldu';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_survey_answers_repeat on survey_answers;
+create trigger trg_survey_answers_repeat
+  before insert on survey_answers
+  for each row execute function assert_survey_repeat();
+
+-- 9) Reps see every stock count of a dealer they are assigned to (not only
+--    their own), so "son sayım" hints and the Stok tab are complete.
+drop policy if exists stock_counts_select_assigned on stock_counts;
+create policy stock_counts_select_assigned on stock_counts for select
+  using (exists (select 1 from assignments a
+                 where a.company_id = stock_counts.company_id and a.salesperson_id = auth.uid()));
+drop policy if exists stock_count_lines_select_assigned on stock_count_lines;
+create policy stock_count_lines_select_assigned on stock_count_lines for select
+  using (exists (select 1 from stock_counts s join assignments a on a.company_id = s.company_id
+                 where s.id = stock_count_lines.stock_count_id and a.salesperson_id = auth.uid()));
 `;

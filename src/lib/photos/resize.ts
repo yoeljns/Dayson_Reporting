@@ -34,7 +34,20 @@ export async function resizePhoto(
   } catch {
     if (file.size > maxBytes)
       throw new Error("Fotoğraf çok büyük ve küçültülemedi.");
-    const mime = (file as File).type || "image/jpeg";
+    const mime = await sniffMime(file);
+    if (!mime)
+      throw new Error("Bu fotoğraf formatı desteklenmiyor — JPEG olarak kaydedin.");
     return { blob: file, mime };
   }
+}
+
+/** Magic-byte check: pickers sometimes report an empty or wrong type. */
+async function sniffMime(file: Blob): Promise<string | null> {
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (head[0] === 0xff && head[1] === 0xd8) return "image/jpeg";
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47)
+    return "image/png";
+  const ascii = (a: number, b: number) => String.fromCharCode(...head.slice(a, b));
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  return null;
 }

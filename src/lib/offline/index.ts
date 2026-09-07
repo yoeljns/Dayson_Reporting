@@ -12,8 +12,9 @@ export {
   dropFailed,
   retryFailed,
   notifyQueue,
+  QUEUE_CHANGED_EVENT,
 } from "./queue";
-export { replayAll, type ReplaySummary } from "./replay";
+export { replayAll, noteQueueChanged, type ReplaySummary } from "./replay";
 export {
   currentOwnerId,
   queueVisit,

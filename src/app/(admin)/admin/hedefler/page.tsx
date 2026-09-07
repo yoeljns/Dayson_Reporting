@@ -53,7 +53,7 @@ export default async function TargetsPage({
         !p.t ? 3 : p.pace?.pace === "geride" ? 0 : p.pace?.pace === "yolunda" ? 1 : 2;
       return order(a) - order(b) || a.name.localeCompare(b.name, "tr");
     });
-  const withTarget = rows.filter((r) => r.t).length;
+  const withTarget = rows.filter((r) => r.t && r.t.lines.length > 0).length;
   const behind = rows.filter((r) => r.pace?.pace === "geride").length;
   const years = [thisYear - 1, thisYear, thisYear + 1];
 

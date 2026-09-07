@@ -7,6 +7,15 @@ import type { VisitType, CompanyKind } from "@/lib/enums";
  * the required list is identical on both sides by construction.
  */
 
+/** The contact question is answered by picking a contact, not a select value. */
+export const CONTACT_QUESTION_CODE = "gorusulen_kisi_rolu";
+
+/** Whether picking a "görüşülen kişi" is mandatory for this visit. */
+export function contactRequired(applicable: QuestionWithOptions[]): boolean {
+  const q = applicable.find((x) => x.code === CONTACT_QUESTION_CODE);
+  return Boolean(q && q.is_active && q.is_required);
+}
+
 /** Active questions that apply to this visit's channel and company kind. */
 export function applicableQuestions(
   questions: QuestionWithOptions[],
@@ -50,6 +59,7 @@ export function missingRequired(
 ): QuestionWithOptions | null {
   for (const q of questions) {
     if (!q.is_required) continue;
+    if (q.code === CONTACT_QUESTION_CODE) continue; // checked via contact_id
     if (skip?.(q)) continue;
     if (!answerIsComplete(q, values[q.id], details[q.id])) return q;
   }

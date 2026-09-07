@@ -7,25 +7,34 @@ import { QUEUE_EVENT, type Op, type QueuedPhoto } from "./types";
 export function notifyQueue() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(QUEUE_EVENT));
 }
+export const QUEUE_CHANGED_EVENT = "dayson:offline-queue-added";
 
 /** Add an op; same coalesceKey replaces the older one (keeps its createdAt). */
 export async function enqueue(
   op: Omit<Op, "id" | "createdAt" | "tries"> & { id?: string }
 ): Promise<Op> {
   const db = await getDB();
+  // One readwrite transaction: coalesce + insert atomically, and keep
+  // createdAt strictly increasing so replay order matches enqueue order even
+  // for same-millisecond enqueues (form op, then its photos op).
+  const tx = db.transaction("ops", "readwrite");
+  const all = await tx.store.getAll();
   let createdAt = Date.now();
+  const maxExisting = all.reduce((m, o) => Math.max(m, o.createdAt), 0);
+  if (createdAt <= maxExisting) createdAt = maxExisting + 1;
   if (op.coalesceKey) {
-    const all = await db.getAll("ops");
     for (const o of all) {
       if (o.coalesceKey === op.coalesceKey) {
-        createdAt = Math.min(createdAt, o.createdAt);
-        await db.delete("ops", o.id);
+        createdAt = o.createdAt; // keep the original slot
+        await tx.store.delete(o.id);
       }
     }
   }
   const rec: Op = { ...op, id: op.id ?? newId(), createdAt, tries: 0 };
-  await db.put("ops", rec);
+  await tx.store.put(rec);
+  await tx.done;
   notifyQueue();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(QUEUE_CHANGED_EVENT));
   return rec;
 }
 

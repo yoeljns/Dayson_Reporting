@@ -95,12 +95,12 @@ export async function saveSurveyAnswer(input: {
   }
 
   if (!s.allow_repeat) {
-    const { count } = await supabase
-      .from("survey_answers")
-      .select("id", { count: "exact", head: true })
-      .eq("survey_id", s.id)
-      .eq("company_id", company.id);
-    if (count) return { error: "Bu rapor bu firma için zaten dolduruldu." };
+    // Definer helper: a colleague's answer counts too (RLS would hide it).
+    const { data: taken } = await supabase.rpc("survey_answered_by_anyone", {
+      p_survey_id: s.id,
+      p_company_id: company.id,
+    });
+    if (taken) return { error: "Bu rapor bu firma için zaten dolduruldu." };
   }
 
   const { data, error } = await supabase
@@ -117,6 +117,8 @@ export async function saveSurveyAnswer(input: {
     .select("id")
     .single();
   if (error) {
+    if (/zaten dolduruldu/i.test(error.message))
+      return { error: "Bu rapor bu firma için zaten dolduruldu." };
     if (error.code === "23505") {
       // Replay or a concurrent same-day save → converge on the existing row.
       const { data: again } = await supabase

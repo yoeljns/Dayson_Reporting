@@ -95,8 +95,12 @@ export function CompanyRowEditor({ company }: { company: CompanyRowData }) {
         </div>
         <div className="space-y-1">
           <Label>Tür</Label>
-          <Select value={kind} onChange={(e) => setKind(e.target.value as CompanyKind)}>
-            {COMPANY_KINDS.map((k) => (
+          <Select
+            value={kind}
+            disabled={company.kind === "distributor"}
+            onChange={(e) => setKind(e.target.value as CompanyKind)}
+          >
+            {COMPANY_KINDS.filter((k) => k !== "distributor" || company.kind === "distributor").map((k) => (
               <option key={k} value={k}>
                 {COMPANY_KIND_LABELS[k]}
               </option>

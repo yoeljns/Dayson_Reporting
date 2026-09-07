@@ -6,15 +6,17 @@ import { CloudOff, RefreshCw, AlertTriangle, Trash2 } from "lucide-react";
 import {
   listOps,
   replayAll,
-  clearAll,
+  noteQueueChanged,
   dropFailed,
   retryFailed,
   isOnline,
   MAX_TRIES,
   QUEUE_EVENT,
+  QUEUE_CHANGED_EVENT,
   OWNER_KEY,
   type Op,
 } from "@/lib/offline";
+import { purgeCaches } from "@/lib/offline/purge";
 
 /**
  * Sync badge: "N kayıt bekliyor / Şimdi gönder / Gönderiliyor… / N kayıt
@@ -48,17 +50,13 @@ export function OfflineSync({ userId }: { userId: string }) {
     }
   }, [refresh, router, userId]);
 
-  // Purge another user's leftovers (queue + cached pages) once, on sign-in.
+  // On a user switch purge the previous user's cached pages. Queued ops are
+  // owner-tagged and only replayed by their owner, so they are kept — a rep's
+  // unsent field data must survive a colleague signing in on the same phone.
   useEffect(() => {
     try {
       const prev = localStorage.getItem(OWNER_KEY);
-      if (prev && prev !== userId) {
-        void clearAll();
-        if ("caches" in window) {
-          void caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
-        }
-        navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_CACHES" });
-      }
+      if (prev && prev !== userId) void purgeCaches();
       localStorage.setItem(OWNER_KEY, userId);
     } catch {
       /* private mode */
@@ -75,13 +73,31 @@ export function OfflineSync({ userId }: { userId: string }) {
     };
     const onOffline = () => setOnline(false);
     const onChange = () => refresh();
+    // An op queued while the browser still reports "online" (flaky signal):
+    // retry shortly, and again whenever the app comes back to the foreground.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onAdded = () => {
+      noteQueueChanged();
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => flush(), 4000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") flush();
+    };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     window.addEventListener(QUEUE_EVENT, onChange);
+    window.addEventListener(QUEUE_CHANGED_EVENT, onAdded);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
+      if (timer) clearTimeout(timer);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener(QUEUE_EVENT, onChange);
+      window.removeEventListener(QUEUE_CHANGED_EVENT, onAdded);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh, flush]);
 

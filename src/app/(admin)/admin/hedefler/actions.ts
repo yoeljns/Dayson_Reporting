@@ -50,7 +50,7 @@ export async function ensureTarget(input: {
 
 /** Replace all category lines (target + manual actuals). */
 export async function saveTargetLines(input: {
-  targetId: string;
+  targetId: string | null;
   companyId: string;
   year: number;
   note?: string | null;
@@ -64,6 +64,11 @@ export async function saveTargetLines(input: {
 }): Promise<{ ok?: boolean; error?: string }> {
   await requireManager();
   const supabase = createClient();
+  const ensured = input.targetId
+    ? { id: input.targetId }
+    : await ensureTarget({ companyId: input.companyId, year: input.year });
+  if (ensured.error || !ensured.id) return { error: ensured.error ?? "Hedef açılamadı." };
+  const targetId = ensured.id;
   const clean = (n: unknown) => {
     const x = Number(n);
     return Number.isFinite(x) && x >= 0 ? x : 0;
@@ -71,7 +76,7 @@ export async function saveTargetLines(input: {
   for (const l of input.lines) {
     const { error } = await supabase.from("dealer_target_lines").upsert(
       {
-        target_id: input.targetId,
+        target_id: targetId,
         category_id: l.categoryId,
         target_qty: Math.round(clean(l.targetQty)),
         target_eur: Math.round(clean(l.targetEur) * 100) / 100,
@@ -85,7 +90,7 @@ export async function saveTargetLines(input: {
   const { error } = await supabase
     .from("dealer_targets")
     .update({ note: input.note?.trim() || null, updated_at: new Date().toISOString() })
-    .eq("id", input.targetId);
+    .eq("id", targetId);
   if (error) return { error: error.message };
   revalidate(input.companyId, input.year);
   return { ok: true };
@@ -93,7 +98,7 @@ export async function saveTargetLines(input: {
 
 /** Draft → Mutabık (with date + contact) / İptal, or back to draft. */
 export async function setTargetStatus(input: {
-  targetId: string;
+  targetId: string | null;
   companyId: string;
   year: number;
   status: TargetStatus;
@@ -117,10 +122,14 @@ export async function setTargetStatus(input: {
     patch.agreed_at = null;
     patch.agreed_with = null;
   }
+  const ensured = input.targetId
+    ? { id: input.targetId }
+    : await ensureTarget({ companyId: input.companyId, year: input.year });
+  if (ensured.error || !ensured.id) return { error: ensured.error ?? "Hedef açılamadı." };
   const { error } = await supabase
     .from("dealer_targets")
     .update(patch)
-    .eq("id", input.targetId);
+    .eq("id", ensured.id);
   if (error) return { error: error.message };
   revalidate(input.companyId, input.year);
   return { ok: true };

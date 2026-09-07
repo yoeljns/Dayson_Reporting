@@ -33,6 +33,11 @@ export function getDB(): Promise<IDBPDatabase<DaysonDB>> {
   }
   if (!dbPromise) {
     dbPromise = openDB<DaysonDB>("dayson-offline", 2, {
+      // Another tab/PWA window holds an older version: let it upgrade.
+      blocking(_cur, _blocked, event) {
+        (event.target as IDBDatabase | null)?.close();
+        dbPromise = null;
+      },
       upgrade(db, oldVersion, _newVersion, tx) {
         if (!db.objectStoreNames.contains("ops")) {
           const ops = db.createObjectStore("ops", { keyPath: "id" });
@@ -75,9 +80,14 @@ export function getDB(): Promise<IDBPDatabase<DaysonDB>> {
               });
             }
             db.deleteObjectStore("pending_visits" as never);
+          }).catch(() => {
+            /* migration failure is non-fatal; legacy store stays for next open */
           });
         }
       },
+    }).catch((e) => {
+      dbPromise = null; // don't memoise a failed open (quota, blocked, …)
+      throw e;
     });
   }
   return dbPromise;

@@ -250,10 +250,25 @@ export async function updateCompanyMeta(input: {
     if (!n) return { error: "Firma adı boş olamaz." };
     patch.name = n;
   }
-  if (input.kind !== undefined) {
+  const admin = createAdminClient();
+  const { data: current } = await admin
+    .from("companies")
+    .select("kind")
+    .eq("id", input.companyId)
+    .maybeSingle();
+  if (!current) return { error: "Firma bulunamadı." };
+  if (input.kind !== undefined && input.kind !== current.kind) {
     if (!(COMPANY_KINDS as readonly string[]).includes(input.kind))
       return { error: "Geçersiz firma türü." };
+    if (input.kind === "distributor")
+      return { error: "Bayiye dönüştürmek için \"Bayiye dönüştür\" düğmesini kullanın." };
     patch.kind = input.kind;
+    if (current.kind === "distributor") {
+      // Leaving the dealer role: dealer-only identity fields are cleared.
+      patch.logo_code = null;
+      patch.segment = null;
+      patch.debt_status = null;
+    }
   }
   if (input.city !== undefined) patch.city = input.city?.trim() || null;
   if (input.plateCode !== undefined) {
@@ -265,11 +280,20 @@ export async function updateCompanyMeta(input: {
   if (input.buysFromCompanyId !== undefined) {
     if (input.buysFromCompanyId === input.companyId)
       return { error: "Firma kendi üzerinden alamaz." };
+    if (input.buysFromCompanyId) {
+      const { data: dealer } = await admin
+        .from("companies")
+        .select("id")
+        .eq("id", input.buysFromCompanyId)
+        .eq("kind", "distributor")
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (!dealer) return { error: "Hizmet veren bayi bulunamadı." };
+    }
     patch.buys_from_company_id = input.buysFromCompanyId || null;
   }
   if (input.notes !== undefined) patch.notes = input.notes?.trim() || null;
   if (Object.keys(patch).length === 0) return { ok: true };
-  const admin = createAdminClient();
   const { error } = await admin.from("companies").update(patch).eq("id", input.companyId);
   if (error) return { error: error.message };
   revalidateCompany(input.companyId);

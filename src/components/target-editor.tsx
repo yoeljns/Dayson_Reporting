@@ -20,14 +20,29 @@ type Cat = { id: string; label_tr: string };
 type Contact = { id: string; name: string; role: string | null };
 type Row = { targetQty: string; targetEur: string; actualQty: string; actualEur: string };
 
+const EMPTY_TARGET = (companyId: string, year: number): TargetWithLines => ({
+  id: "",
+  company_id: companyId,
+  year,
+  status: "taslak",
+  agreed_at: null,
+  agreed_with: null,
+  note: null,
+  created_by: null,
+  created_at: "",
+  updated_at: "",
+  lines: [],
+});
+
 export function TargetEditor({
-  target,
+  target: targetProp,
   companyId,
   year,
   categories,
   contacts,
 }: {
-  target: TargetWithLines;
+  /** null until the first save — no row is created just by opening the page. */
+  target: TargetWithLines | null;
   companyId: string;
   year: number;
   categories: Cat[];
@@ -35,6 +50,8 @@ export function TargetEditor({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const target = targetProp ?? EMPTY_TARGET(companyId, year);
+  const targetId = target.id || null;
   const [pending, startTransition] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<string, Row>>(() => {
@@ -86,7 +103,7 @@ export function TargetEditor({
     run(
       () =>
         saveTargetLines({
-          targetId: target.id,
+          targetId,
           companyId,
           year,
           note,
@@ -218,7 +235,7 @@ export function TargetEditor({
                     run(
                       () =>
                         setTargetStatus({
-                          targetId: target.id,
+                          targetId,
                           companyId,
                           year,
                           status: "mutabik",
@@ -237,7 +254,7 @@ export function TargetEditor({
                   onClick={() =>
                     run(
                       () =>
-                        setTargetStatus({ targetId: target.id, companyId, year, status: "iptal" }),
+                        setTargetStatus({ targetId, companyId, year, status: "iptal" }),
                       "Hedef iptal edildi"
                     )
                   }
@@ -253,7 +270,7 @@ export function TargetEditor({
               disabled={pending}
               onClick={() =>
                 run(
-                  () => setTargetStatus({ targetId: target.id, companyId, year, status: "taslak" }),
+                  () => setTargetStatus({ targetId, companyId, year, status: "taslak" }),
                   "Taslağa alındı"
                 )
               }

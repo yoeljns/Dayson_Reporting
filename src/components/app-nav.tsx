@@ -11,11 +11,10 @@ import {
   Shield,
   LayoutDashboard,
   BarChart3,
-  LogOut,
   UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logout } from "@/app/(auth)/login/actions";
+import { LogoutButton } from "@/components/logout-button";
 import { Logo } from "@/components/logo";
 import { ModeToggle } from "@/components/mode-toggle";
 import type { UserRole } from "@/lib/enums";
@@ -92,15 +91,7 @@ export function AppNav({
             <UserCog className="h-4 w-4" />
             <span className="hidden sm:inline">{fullName}</span>
           </Link>
-          <form action={logout}>
-            <button
-              type="submit"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Çıkış</span>
-            </button>
-          </form>
+          <LogoutButton />
         </div>
       </header>
 

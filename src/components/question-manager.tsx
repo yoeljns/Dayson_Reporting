@@ -571,7 +571,7 @@ export function QuestionManager({
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      {!fixed && (
+                      {(!fixed || !q.is_active) && (
                         <Button
                           variant="outline"
                           size="sm"

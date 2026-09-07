@@ -37,7 +37,8 @@ export function PlanDeadlineBanner({
 
   const thisWeek = weekStartOf(now);
   const plan = plans.find((p) => p.week_start === thisWeek);
-  if (plan && plan.status !== "taslak") return null; // submitted / decided → done
+  // Submitted or approved → done. A rejected plan still needs work, so keep nagging.
+  if (plan && (plan.status === "gonderildi" || plan.status === "onaylandi")) return null;
 
   const deadline = deadlineFor(thisWeek, weekday, hour, minute);
   const overdue = now.getTime() >= deadline.getTime();

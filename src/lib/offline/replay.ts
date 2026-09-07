@@ -170,6 +170,17 @@ export function replayAll(ownerId: string): Promise<ReplaySummary> {
     return summary;
   })().finally(() => {
     inFlight = null;
+    // Ops enqueued during the run were not in the snapshot — send them now.
+    if (pendingRerun) {
+      pendingRerun = false;
+      void replayAll(ownerId);
+    }
   });
   return inFlight;
+}
+
+let pendingRerun = false;
+/** Called by the queue when an op is added while a run is in flight. */
+export function noteQueueChanged() {
+  if (inFlight) pendingRerun = true;
 }

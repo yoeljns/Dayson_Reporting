@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TargetEditor } from "@/components/target-editor";
 import { TargetView } from "@/components/target-view";
-import { ensureTarget } from "@/app/(admin)/admin/hedefler/actions";
 import { getTargetFor } from "@/lib/targets/server";
 import { elapsedFractionOfYear } from "@/lib/rules/target";
 import { getPaceThresholds } from "@/lib/settings";
@@ -29,10 +28,6 @@ export default async function TargetDetailPage({
     .maybeSingle();
   if (!company || company.kind !== "distributor") notFound();
 
-  // A draft row is created on first open so lines can be saved right away.
-  const ensured = await ensureTarget({ companyId: company.id, year });
-  if (ensured.error) throw new Error(ensured.error);
-
   const [target, { data: cats }, { data: contacts }, thresholds] = await Promise.all([
     getTargetFor(supabase, company.id, year),
     supabase
@@ -47,7 +42,6 @@ export default async function TargetDetailPage({
       .order("name"),
     getPaceThresholds(),
   ]);
-  if (!target) notFound();
   const categories = (cats as { id: string; label_tr: string }[] | null) ?? [];
   const elapsed = elapsedFractionOfYear(year, todayIso());
 

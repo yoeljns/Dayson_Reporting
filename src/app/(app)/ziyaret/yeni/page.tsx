@@ -67,11 +67,14 @@ function NewVisitForm() {
     if (!selected) return;
     setError(null);
 
+    // One client id for both paths: if the online request reaches the server
+    // but the reply is lost, the queued replay converges on the same visit.
+    const visitId = newId();
     // Offline: queue a bare draft with a client id; the sync badge sends it
     // on reconnect and the rep continues it from "Tamamlanmamış ziyaretler".
     const queueDraft = async () => {
       await queueVisit(`Ziyaret · ${selected.name}`, {
-        visitId: newId(),
+        visitId,
         create: true,
         companyId: selected.id,
         visitType,
@@ -93,6 +96,7 @@ function NewVisitForm() {
     startTransition(async () => {
       try {
         const res = await createDraftVisit({
+          id: visitId,
           companyId: selected.id,
           visitType,
           visitDate,

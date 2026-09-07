@@ -11,6 +11,7 @@ import {
 } from "@/lib/enums";
 import type { QuestionWithOptions } from "@/types/db";
 import {
+  contactRequired,
   applicableQuestions,
   missingRequired,
   conditionalSkip,
@@ -339,7 +340,7 @@ export async function saveVisit(input: {
   // re-edited completed visit of their own) — never someone else's record.
   const { data: visit } = await supabase
     .from("visits")
-    .select("salesperson_id, visit_type, deleted_at, companies(kind)")
+    .select("salesperson_id, visit_type, deleted_at, contact_id, companies(kind)")
     .eq("id", input.visitId)
     .maybeSingle();
   if (!visit) return { error: "Ziyaret bulunamadı." };
@@ -378,6 +379,8 @@ export async function saveVisit(input: {
       conditionalSkip(byCode, values)
     );
     if (missing) return { error: `"${missing.label_tr}" alanı zorunludur.` };
+    if (contactRequired(applicable) && !visit.contact_id)
+      return { error: "Görüşülen kişi zorunludur." };
   }
 
   // Atomic delete+insert via RPC so a failed insert never wipes prior answers.

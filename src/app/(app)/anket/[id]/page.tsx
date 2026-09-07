@@ -74,6 +74,13 @@ export default async function SurveyFillPage({
       .eq("answered_at", visitDate ?? todayIso())
       .maybeSingle();
     initial = (a?.answers as Record<string, SurveyAnswerValue> | null) ?? null;
+    if (!initial && !s.allow_repeat && !notApplicable) {
+      const { data: taken } = await supabase.rpc("survey_answered_by_anyone", {
+        p_survey_id: s.id,
+        p_company_id: company.id,
+      });
+      if (taken) notApplicable = "Bu özel rapor bu firma için zaten dolduruldu.";
+    }
   }
 
   const back = searchParams.return || "/anket";
