@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatTRY } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { ObservationMapButton } from "@/components/observation-map-button";
+import { getPhotosForMany } from "@/lib/photos/server";
+import { PhotoGrid } from "@/components/photo-grid";
 
 export default async function CompetitorMapPage({
   searchParams,
@@ -19,7 +23,7 @@ export default async function CompetitorMapPage({
   let query = supabase
     .from("competitor_observations")
     .select(
-      "id, product_name, observed_price, currency, observed_at, city, note, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
+      "id, product_name, observed_price, currency, observed_at, city, note, competitor_id, competitor_product_id, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
     )
     .eq("is_draft", false)
     .order("observed_at", { ascending: false })
@@ -28,10 +32,30 @@ export default async function CompetitorMapPage({
     query = query.eq("competitor_id", searchParams.competitor);
 
   const { data: obs } = await query;
+  const [{ data: products }, photos] = await Promise.all([
+    supabase
+      .from("competitor_products")
+      .select("id, competitor_id, name")
+      .eq("is_active", true)
+      .order("name"),
+    getPhotosForMany("competitor_observation", (obs ?? []).map((o) => o.id)),
+  ]);
+  const productsByComp = new Map<string, { id: string; name: string }[]>();
+  for (const p of (products ?? []) as { id: string; competitor_id: string; name: string }[]) {
+    (productsByComp.get(p.competitor_id) ?? productsByComp.set(p.competitor_id, []).get(p.competitor_id)!).push({ id: p.id, name: p.name });
+  }
+  const freeCount = (obs ?? []).filter((o) => !o.competitor_product_id).length;
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Rakip Fiyat Haritası</h1>
+      <div>
+        <h1 className="text-xl font-semibold">Rakip Bilgileri</h1>
+        <p className="text-sm text-muted-foreground">
+          Sahadan gelen rakip ürün / fiyat gözlemleri. &quot;Serbest&quot; yazılan
+          ürünleri kataloğa eşleyin ki raporlarda aynı ürün tek satırda toplansın
+          {freeCount > 0 ? ` (${freeCount} serbest kayıt)` : ""}.
+        </p>
+      </div>
 
       <form className="flex items-center gap-2">
         <select
@@ -93,7 +117,31 @@ export default async function CompetitorMapPage({
                     <tr key={o.id} className="border-b">
                       <td className="p-2 whitespace-nowrap">{o.observed_at}</td>
                       <td className="p-2">{comp?.name}</td>
-                      <td className="p-2">{o.product_name}</td>
+                      <td className="p-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{o.product_name}</span>
+                          {!o.competitor_product_id && (
+                            <>
+                              <Badge variant="secondary">Serbest</Badge>
+                              {o.competitor_id && (
+                                <ObservationMapButton
+                                  observationId={o.id}
+                                  productName={o.product_name}
+                                  products={productsByComp.get(o.competitor_id) ?? []}
+                                />
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {o.note && (
+                          <div className="text-xs text-muted-foreground">{o.note}</div>
+                        )}
+                        {(photos[o.id]?.length ?? 0) > 0 && (
+                          <div className="mt-1">
+                            <PhotoGrid photos={photos[o.id]} size="sm" />
+                          </div>
+                        )}
+                      </td>
                       <td className="p-2 text-right whitespace-nowrap">
                         {formatTRY(o.observed_price)}
                       </td>

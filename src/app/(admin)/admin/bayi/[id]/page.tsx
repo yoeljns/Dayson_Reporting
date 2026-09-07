@@ -18,6 +18,7 @@ import { elapsedFractionOfYear } from "@/lib/rules/target";
 import { getPaceThresholds } from "@/lib/settings";
 import { countedSkus, companyCountHistory } from "@/lib/stock/server";
 import { getPhotosForMany } from "@/lib/photos/server";
+import { formatSurveyAnswer } from "@/lib/rules/survey";
 import { PhotoGrid } from "@/components/photo-grid";
 import {
   VISIT_TYPE_LABELS,
@@ -244,13 +245,42 @@ export default async function DealerFilePage({
     ]);
   const targetElapsed = elapsedFractionOfYear(year, todayIso());
 
+  // Özel rapor cevapları (son 10) — question prompts fetched for the surveys involved.
+  const { data: surveyAnswerRows } = await supabase
+    .from("survey_answers")
+    .select("id, survey_id, answered_at, answers, surveys(name), salesperson:salesperson_id(full_name)")
+    .eq("company_id", companyId)
+    .order("answered_at", { ascending: false })
+    .limit(10);
+  const surveyAnswers = (surveyAnswerRows as unknown as {
+    id: string;
+    survey_id: string;
+    answered_at: string;
+    answers: Record<string, unknown>;
+    surveys: { name: string } | { name: string }[] | null;
+    salesperson: { full_name: string } | { full_name: string }[] | null;
+  }[] | null) ?? [];
+  const surveyIds = Array.from(new Set(surveyAnswers.map((a) => a.survey_id)));
+  const { data: sqRows } =
+    surveyIds.length > 0
+      ? await supabase
+          .from("survey_questions")
+          .select("id, survey_id, prompt, input_type, options, sort_order")
+          .in("survey_id", surveyIds)
+          .order("sort_order")
+      : { data: [] as { id: string; survey_id: string; prompt: string; input_type: string; options: unknown; sort_order: number }[] };
+  const sqBySurvey = new Map<string, { id: string; prompt: string; input_type: string; options: unknown }[]>();
+  for (const q of (sqRows ?? []) as { id: string; survey_id: string; prompt: string; input_type: string; options: unknown }[]) {
+    (sqBySurvey.get(q.survey_id) ?? sqBySurvey.set(q.survey_id, []).get(q.survey_id)!).push(q);
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 text-[15px] leading-relaxed sm:text-base">
       <Link
-        href="/admin/son-ziyaretler"
+        href="/admin/firmalar"
         className="inline-block text-sm text-muted-foreground hover:text-foreground print:hidden"
       >
-        ← Bayiler
+        ← Firmalar
       </Link>
 
       {/* Künye */}
@@ -500,6 +530,37 @@ export default async function DealerFilePage({
           </div>
         )}
       </section>
+
+      {/* Özel rapor cevapları */}
+      {surveyAnswers.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold">Özel rapor cevapları</h2>
+          <div className="space-y-2">
+            {surveyAnswers.map((a) => (
+              <Card key={a.id}>
+                <CardContent className="space-y-2 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <span className="font-medium">{one(a.surveys)?.name ?? "Özel rapor"}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {one(a.salesperson)?.full_name ?? "—"} · {formatTRDate(a.answered_at)}
+                    </span>
+                  </div>
+                  <dl className="space-y-1">
+                    {(sqBySurvey.get(a.survey_id) ?? []).map((q) => (
+                      <div key={q.id} className="flex gap-3">
+                        <dt className="w-1/2 shrink-0 text-muted-foreground">{q.prompt}</dt>
+                        <dd className="whitespace-pre-wrap font-medium">
+                          {formatSurveyAnswer(q.input_type, q.options, a.answers?.[q.id])}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Şikayetler */}
       <section className="space-y-2">

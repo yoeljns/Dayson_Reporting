@@ -6,9 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   SEGMENTS,
   DEBT_STATUSES,
+  COMPANY_KINDS,
   type Segment,
   type DebtStatus,
   type AssignmentRole,
+  type CompanyKind,
 } from "@/lib/enums";
 
 function revalidateCompany(companyId: string) {
@@ -227,5 +229,94 @@ export async function deleteCompany(input: {
   }
 
   revalidatePath("/admin/bayiler");
+  return { ok: true };
+}
+
+/** Edit a company's identity fields from the portal (any kind). */
+export async function updateCompanyMeta(input: {
+  companyId: string;
+  name?: string;
+  kind?: CompanyKind;
+  city?: string | null;
+  plateCode?: string | null;
+  phone?: string | null;
+  buysFromCompanyId?: string | null;
+  notes?: string | null;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const patch: Record<string, unknown> = {};
+  if (input.name !== undefined) {
+    const n = input.name.trim();
+    if (!n) return { error: "Firma adı boş olamaz." };
+    patch.name = n;
+  }
+  if (input.kind !== undefined) {
+    if (!(COMPANY_KINDS as readonly string[]).includes(input.kind))
+      return { error: "Geçersiz firma türü." };
+    patch.kind = input.kind;
+  }
+  if (input.city !== undefined) patch.city = input.city?.trim() || null;
+  if (input.plateCode !== undefined) {
+    const p = (input.plateCode ?? "").trim();
+    if (p && !/^[0-9]{2}$/.test(p)) return { error: "Plaka kodu 2 haneli olmalı." };
+    patch.plate_code = p || null;
+  }
+  if (input.phone !== undefined) patch.phone = input.phone?.trim() || null;
+  if (input.buysFromCompanyId !== undefined) {
+    if (input.buysFromCompanyId === input.companyId)
+      return { error: "Firma kendi üzerinden alamaz." };
+    patch.buys_from_company_id = input.buysFromCompanyId || null;
+  }
+  if (input.notes !== undefined) patch.notes = input.notes?.trim() || null;
+  if (Object.keys(patch).length === 0) return { ok: true };
+  const admin = createAdminClient();
+  const { error } = await admin.from("companies").update(patch).eq("id", input.companyId);
+  if (error) return { error: error.message };
+  revalidateCompany(input.companyId);
+  revalidatePath(`/firma/${input.companyId}`);
+  return { ok: true };
+}
+
+/** Potansiyel bayi → Bayi: keeps history, gets a logo code / segment. */
+export async function convertToDealer(input: {
+  companyId: string;
+  logoCode?: string | null;
+  segment?: string | null;
+  debtStatus?: string | null;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const admin = createAdminClient();
+  const logoCode = input.logoCode?.trim() || null;
+  if (logoCode) {
+    const { data: dup } = await admin
+      .from("companies")
+      .select("id")
+      .eq("logo_code", logoCode)
+      .neq("id", input.companyId)
+      .limit(1)
+      .maybeSingle();
+    if (dup) return { error: "Bu logo kodu başka bir bayide kullanılıyor." };
+  }
+  const segment =
+    input.segment && (SEGMENTS as readonly string[]).includes(input.segment)
+      ? (input.segment as Segment)
+      : null;
+  const debtStatus =
+    input.debtStatus && (DEBT_STATUSES as readonly string[]).includes(input.debtStatus)
+      ? (input.debtStatus as DebtStatus)
+      : null;
+  const { error } = await admin
+    .from("companies")
+    .update({
+      kind: "distributor",
+      logo_code: logoCode,
+      segment,
+      debt_status: debtStatus,
+      buys_from_company_id: null,
+    })
+    .eq("id", input.companyId);
+  if (error) return { error: error.message };
+  revalidateCompany(input.companyId);
+  revalidatePath(`/firma/${input.companyId}`);
   return { ok: true };
 }

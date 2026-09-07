@@ -77,3 +77,57 @@ export async function savePlanDeadline(input: {
   revalidatePath("/plan");
   return { ok: true };
 }
+
+/** Days without a visit/count after which a dealer is flagged (admin only). */
+export async function saveStaleDays(input: {
+  days: number;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const admin = await requireAdmin();
+  const days = Math.trunc(input.days);
+  if (!Number.isFinite(days) || days < 1 || days > 365)
+    return { error: "Gün 1-365 arasında olmalı." };
+  const client = createAdminClient();
+  const { error } = await client.from("app_settings").upsert(
+    {
+      key: "stale_days",
+      value: { days },
+      updated_at: new Date().toISOString(),
+      updated_by: admin.id,
+    },
+    { onConflict: "key" }
+  );
+  if (error) return { error: error.message };
+  revalidatePath("/admin/ayarlar");
+  revalidatePath("/admin");
+  revalidatePath("/admin/stok");
+  return { ok: true };
+}
+
+/** Target pace thresholds (admin only): ahead ≥ x, on-track ≥ y. */
+export async function savePaceThresholds(input: {
+  ahead: number;
+  onTrack: number;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const admin = await requireAdmin();
+  const ahead = Number(input.ahead);
+  const onTrack = Number(input.onTrack);
+  if (!Number.isFinite(ahead) || !Number.isFinite(onTrack))
+    return { error: "Sayı girin." };
+  if (!(onTrack > 0 && ahead > onTrack && ahead <= 3))
+    return { error: "Önde eşiği Yolunda eşiğinden büyük olmalı (örn. 1,05 ve 0,90)." };
+  const client = createAdminClient();
+  const { error } = await client.from("app_settings").upsert(
+    {
+      key: "target_pace_thresholds",
+      value: { ahead, onTrack },
+      updated_at: new Date().toISOString(),
+      updated_by: admin.id,
+    },
+    { onConflict: "key" }
+  );
+  if (error) return { error: error.message };
+  revalidatePath("/admin/ayarlar");
+  revalidatePath("/admin/hedefler");
+  revalidatePath("/admin");
+  return { ok: true };
+}

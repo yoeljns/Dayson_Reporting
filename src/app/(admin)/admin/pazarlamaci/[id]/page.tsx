@@ -21,6 +21,7 @@ import {
   USER_ROLE_LABELS,
   COMPLAINT_STATUS_LABELS,
   PLAN_STATUS_LABELS,
+  PLAN_STATUS_BADGE,
   type ComplaintStatus,
   type PlanStatus,
   type UserRole,
@@ -490,11 +491,7 @@ export default async function SalespersonFilePage({
                           · {p.visit_plan_items?.[0]?.count ?? 0} firma
                         </span>
                       </Link>
-                      <Badge
-                        variant={
-                          p.status === "gonderildi" ? "success" : "warning"
-                        }
-                      >
+                      <Badge variant={PLAN_STATUS_BADGE[p.status as PlanStatus]}>
                         {PLAN_STATUS_LABELS[p.status as PlanStatus]}
                       </Badge>
                     </li>

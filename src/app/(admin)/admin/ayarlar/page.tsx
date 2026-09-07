@@ -1,14 +1,22 @@
 import { requireAdmin } from "@/lib/auth";
-import { getEodReminder, getPlanDeadline } from "@/lib/settings";
+import {
+  getEodReminder,
+  getPlanDeadline,
+  getStaleDays,
+  getPaceThresholds,
+} from "@/lib/settings";
+import { StaleDaysSettings, PaceSettings } from "@/components/portal-settings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EodReminderSettings } from "@/components/eod-reminder-settings";
 import { PlanDeadlineSettings } from "@/components/plan-deadline-settings";
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const [eod, planDeadline] = await Promise.all([
+  const [eod, planDeadline, staleDays, pace] = await Promise.all([
     getEodReminder(),
     getPlanDeadline(),
+    getStaleDays(),
+    getPaceThresholds(),
   ]);
 
   return (
@@ -35,6 +43,24 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <PlanDeadlineSettings initial={planDeadline} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ziyaretsiz bayi eşiği</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <StaleDaysSettings initial={staleDays} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Hedef tempo eşikleri</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PaceSettings initial={pace} />
         </CardContent>
       </Card>
     </div>
