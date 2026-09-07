@@ -28,6 +28,8 @@ export type ReportFilters = {
   category?: string;
   company?: string; // company_id (visit report)
   q?: string; // free-text company name (visit report)
+  survey?: string; // survey id (anket report)
+  year?: string; // target year (hedef report)
 };
 
 const ISO = "yyyy-MM-dd";
@@ -63,6 +65,8 @@ export function parseFilters(sp: URLSearchParams): ReportFilters {
     category: clean(sp.get("category")),
     company: clean(sp.get("company")),
     q: clean(sp.get("q")),
+    survey: clean(sp.get("survey")),
+    year: clean(sp.get("year")),
   };
 }
 

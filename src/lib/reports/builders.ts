@@ -63,6 +63,9 @@ export const REPORT_RANGE_MODE: Record<string, RangeMode> = {
   kapsama: "none",
   plan: "week",
   marka: "d30",
+  stok: "none",
+  anket: "none",
+  hedef: "none",
 };
 
 // ---------------------------------------------------------------------------

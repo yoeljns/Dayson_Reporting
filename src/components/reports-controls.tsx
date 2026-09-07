@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { Download, FileSpreadsheet, RotateCcw, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { todayIso, currentWeekStart, weekEndOf } from "@/lib/week";
 import type { FilterKind } from "@/lib/reports";
 import {
   VISIT_STATUSES,
@@ -21,123 +24,207 @@ import {
 } from "@/lib/enums";
 
 type Option = { id: string; name: string };
+export type ReportFilterValues = {
+  start: string;
+  end: string;
+  sp: string;
+  status: string;
+  dept: string;
+  competitor: string;
+  segment: string;
+  kind: string;
+  category: string;
+  survey: string;
+  year: string;
+};
 
+const EMPTY: ReportFilterValues = {
+  start: "",
+  end: "",
+  sp: "",
+  status: "",
+  dept: "",
+  competitor: "",
+  segment: "",
+  kind: "",
+  category: "",
+  survey: "",
+  year: "",
+};
+
+function presets(): { key: string; label: string; start: string; end: string }[] {
+  const today = todayIso();
+  const y = today.slice(0, 4);
+  const m = today.slice(5, 7);
+  const d = new Date(`${today}T00:00:00Z`);
+  const threeMonths = new Date(d);
+  threeMonths.setUTCMonth(threeMonths.getUTCMonth() - 3);
+  const ws = currentWeekStart();
+  return [
+    { key: "week", label: "Bu hafta", start: ws, end: weekEndOf(ws) },
+    { key: "month", label: "Bu ay", start: `${y}-${m}-01`, end: today },
+    { key: "q", label: "Son 3 ay", start: threeMonths.toISOString().slice(0, 10), end: today },
+    { key: "year", label: "Bu yıl", start: `${y}-01-01`, end: today },
+  ];
+}
+
+/**
+ * Filter panel of the reports page. Nothing is applied until "Uygula" —
+ * managers set a few fields then look at the preview once.
+ */
 export function ReportsControls({
   reportType,
   filters,
   initial,
+  defaultRangeText,
+  heavy,
   salespeople,
   competitors,
   categories,
+  surveys,
 }: {
   reportType: string;
   filters: FilterKind[];
-  initial: {
-    start: string;
-    end: string;
-    sp: string;
-    status: string;
-    dept: string;
-    competitor: string;
-    segment: string;
-    kind: string;
-    category: string;
-  };
+  initial: ReportFilterValues;
+  defaultRangeText?: string;
+  heavy?: boolean;
   salespeople: Option[];
   competitors: Option[];
   categories: Option[];
+  surveys: Option[];
 }) {
   const router = useRouter();
-  const [start, setStart] = useState(initial.start);
-  const [end, setEnd] = useState(initial.end);
-  const [sp, setSp] = useState(initial.sp);
-  const [status, setStatus] = useState(initial.status);
-  const [dept, setDept] = useState(initial.dept);
-  const [competitor, setCompetitor] = useState(initial.competitor);
-  const [segment, setSegment] = useState(initial.segment);
-  const [kind, setKind] = useState(initial.kind);
-  const [category, setCategory] = useState(initial.category);
-
+  const [v, setV] = useState<ReportFilterValues>(initial);
   const has = (k: FilterKind) => filters.includes(k);
+  const set = (k: keyof ReportFilterValues, val: string) => setV((p) => ({ ...p, [k]: val }));
 
-  const params = useMemo(() => {
+  function toParams(vals: ReportFilterValues): Record<string, string> {
     const p: Record<string, string> = {};
     if (has("range") || has("weekrange")) {
-      if (start) p.start = start;
-      if (end) p.end = end;
+      if (vals.start) p.start = vals.start;
+      if (vals.end) p.end = vals.end;
     }
-    if (has("sp") && sp) p.sp = sp;
-    if ((has("vstatus") || has("cstatus")) && status) p.status = status;
-    if (has("dept") && dept) p.dept = dept;
-    if (has("competitor") && competitor) p.competitor = competitor;
-    if (has("segment") && segment) p.segment = segment;
-    if (has("kind") && kind) p.kind = kind;
-    if (has("category") && category) p.category = category;
+    if (has("sp") && vals.sp) p.sp = vals.sp;
+    if ((has("vstatus") || has("cstatus")) && vals.status) p.status = vals.status;
+    if (has("dept") && vals.dept) p.dept = vals.dept;
+    if (has("competitor") && vals.competitor) p.competitor = vals.competitor;
+    if (has("segment") && vals.segment) p.segment = vals.segment;
+    if (has("kind") && vals.kind) p.kind = vals.kind;
+    if (has("category") && vals.category) p.category = vals.category;
+    if (has("survey") && vals.survey) p.survey = vals.survey;
+    if (has("year") && vals.year) p.year = vals.year;
     return p;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [start, end, sp, status, dept, competitor, segment, kind, category, reportType]);
-
-  function apply(next: Record<string, string>) {
-    const qs = new URLSearchParams({ r: reportType, ...next });
-    router.push(`/admin/raporlar?${qs.toString()}`);
   }
 
-  const singleHref = `/api/admin/raporlar?${new URLSearchParams({
-    type: reportType,
-    ...params,
-  }).toString()}`;
+  function apply(vals: ReportFilterValues = v) {
+    const qs = new URLSearchParams({ r: reportType, ...toParams(vals) });
+    router.push(`/admin/raporlar?${qs.toString()}`);
+  }
+  function reset() {
+    setV(EMPTY);
+    router.push(`/admin/raporlar?r=${reportType}`);
+  }
+
+  const applied = toParams(initial);
+  const activeBadges: string[] = [];
+  const nameOf = (list: Option[], id: string) => list.find((o) => o.id === id)?.name ?? id;
+  if (applied.start || applied.end)
+    activeBadges.push(`${applied.start || "…"} – ${applied.end || "…"}`);
+  if (applied.sp) activeBadges.push(nameOf(salespeople, applied.sp));
+  if (applied.status)
+    activeBadges.push(
+      has("vstatus")
+        ? VISIT_STATUS_LABELS[applied.status as keyof typeof VISIT_STATUS_LABELS] ?? applied.status
+        : COMPLAINT_STATUS_LABELS[applied.status as keyof typeof COMPLAINT_STATUS_LABELS] ?? applied.status
+    );
+  if (applied.dept) activeBadges.push(COMPLAINT_OWNER_DEPT_LABELS[applied.dept as keyof typeof COMPLAINT_OWNER_DEPT_LABELS] ?? applied.dept);
+  if (applied.competitor) activeBadges.push(nameOf(competitors, applied.competitor));
+  if (applied.segment) activeBadges.push(`Segment ${applied.segment}`);
+  if (applied.kind) activeBadges.push(COMPANY_KIND_LABELS[applied.kind as keyof typeof COMPANY_KIND_LABELS] ?? applied.kind);
+  if (applied.category) activeBadges.push(nameOf(categories, applied.category));
+  if (applied.survey) activeBadges.push(nameOf(surveys, applied.survey));
+  if (applied.year) activeBadges.push(`Yıl ${applied.year}`);
+
+  const singleHref = `/api/admin/raporlar?${new URLSearchParams({ type: reportType, ...applied }).toString()}`;
   const allHref = `/api/admin/raporlar?${new URLSearchParams({
     type: "all",
-    ...(start ? { start } : {}),
-    ...(end ? { end } : {}),
+    ...(applied.start ? { start: applied.start } : {}),
+    ...(applied.end ? { end: applied.end } : {}),
+    ...(applied.sp ? { sp: applied.sp } : {}),
   }).toString()}`;
 
+  const thisYear = Number(todayIso().slice(0, 4));
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {(has("range") || has("weekrange")) && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Hazır dönem:</span>
+            {presets().map((p) => {
+              const on = v.start === p.start && v.end === p.end;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => {
+                    const next = { ...v, start: p.start, end: p.end };
+                    setV(next);
+                    apply(next);
+                  }}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs",
+                    on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent"
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+            {defaultRangeText && (
+              <span className="text-xs text-muted-foreground">· {defaultRangeText}</span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-3">
         {(has("range") || has("weekrange")) && (
           <>
-            <div className="space-y-1">
-              <Label htmlFor="start">Başlangıç</Label>
-              <Input
-                id="start"
-                type="date"
-                value={start}
-                onChange={(e) => {
-                  setStart(e.target.value);
-                  apply({ ...params, start: e.target.value });
-                }}
-                className="w-40"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="end">Bitiş</Label>
-              <Input
-                id="end"
-                type="date"
-                value={end}
-                onChange={(e) => {
-                  setEnd(e.target.value);
-                  apply({ ...params, end: e.target.value });
-                }}
-                className="w-40"
-              />
-            </div>
+            <Field label="Başlangıç" id="start">
+              <Input id="start" type="date" value={v.start} onChange={(e) => set("start", e.target.value)} className="w-40" />
+            </Field>
+            <Field label="Bitiş" id="end">
+              <Input id="end" type="date" value={v.end} onChange={(e) => set("end", e.target.value)} className="w-40" />
+            </Field>
           </>
         )}
-
+        {has("survey") && (
+          <Field label="Özel rapor" id="survey">
+            <Select id="survey" value={v.survey} onChange={(e) => set("survey", e.target.value)} className="w-64">
+              <option value="">En son rapor</option>
+              {surveys.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {has("year") && (
+          <Field label="Yıl" id="year">
+            <Select id="year" value={v.year || String(thisYear)} onChange={(e) => set("year", e.target.value)} className="w-32">
+              {[thisYear - 1, thisYear, thisYear + 1].map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         {has("sp") && (
-          <div className="space-y-1">
-            <Label htmlFor="sp">Pazarlamacı</Label>
-            <Select
-              id="sp"
-              value={sp}
-              onChange={(e) => {
-                setSp(e.target.value);
-                apply(e.target.value ? { ...params, sp: e.target.value } : omit(params, "sp"));
-              }}
-              className="w-52"
-            >
+          <Field label="Pazarlamacı" id="sp">
+            <Select id="sp" value={v.sp} onChange={(e) => set("sp", e.target.value)} className="w-52">
               <option value="">Tüm pazarlamacılar</option>
               {salespeople.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -145,65 +232,29 @@ export function ReportsControls({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
         )}
-
-        {has("vstatus") && (
-          <div className="space-y-1">
-            <Label htmlFor="status">Durum</Label>
-            <Select
-              id="status"
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                apply(e.target.value ? { ...params, status: e.target.value } : omit(params, "status"));
-              }}
-              className="w-44"
-            >
+        {(has("vstatus") || has("cstatus")) && (
+          <Field label="Durum" id="status">
+            <Select id="status" value={v.status} onChange={(e) => set("status", e.target.value)} className="w-44">
               <option value="">Tümü</option>
-              {VISIT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {VISIT_STATUS_LABELS[s]}
-                </option>
-              ))}
+              {has("vstatus")
+                ? VISIT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {VISIT_STATUS_LABELS[s]}
+                    </option>
+                  ))
+                : COMPLAINT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {COMPLAINT_STATUS_LABELS[s]}
+                    </option>
+                  ))}
             </Select>
-          </div>
+          </Field>
         )}
-
-        {has("cstatus") && (
-          <div className="space-y-1">
-            <Label htmlFor="status">Durum</Label>
-            <Select
-              id="status"
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                apply(e.target.value ? { ...params, status: e.target.value } : omit(params, "status"));
-              }}
-              className="w-44"
-            >
-              <option value="">Tümü</option>
-              {COMPLAINT_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {COMPLAINT_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
-
         {has("dept") && (
-          <div className="space-y-1">
-            <Label htmlFor="dept">Departman</Label>
-            <Select
-              id="dept"
-              value={dept}
-              onChange={(e) => {
-                setDept(e.target.value);
-                apply(e.target.value ? { ...params, dept: e.target.value } : omit(params, "dept"));
-              }}
-              className="w-48"
-            >
+          <Field label="Departman" id="dept">
+            <Select id="dept" value={v.dept} onChange={(e) => set("dept", e.target.value)} className="w-48">
               <option value="">Tümü</option>
               {COMPLAINT_OWNER_DEPTS.map((d) => (
                 <option key={d} value={d}>
@@ -211,21 +262,11 @@ export function ReportsControls({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
         )}
-
         {has("competitor") && (
-          <div className="space-y-1">
-            <Label htmlFor="competitor">Rakip</Label>
-            <Select
-              id="competitor"
-              value={competitor}
-              onChange={(e) => {
-                setCompetitor(e.target.value);
-                apply(e.target.value ? { ...params, competitor: e.target.value } : omit(params, "competitor"));
-              }}
-              className="w-52"
-            >
+          <Field label="Rakip" id="competitor">
+            <Select id="competitor" value={v.competitor} onChange={(e) => set("competitor", e.target.value)} className="w-52">
               <option value="">Tüm rakipler</option>
               {competitors.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -233,21 +274,11 @@ export function ReportsControls({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
         )}
-
         {has("category") && (
-          <div className="space-y-1">
-            <Label htmlFor="category">Kategori</Label>
-            <Select
-              id="category"
-              value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                apply(e.target.value ? { ...params, category: e.target.value } : omit(params, "category"));
-              }}
-              className="w-52"
-            >
+          <Field label="Kategori" id="category">
+            <Select id="category" value={v.category} onChange={(e) => set("category", e.target.value)} className="w-52">
               <option value="">Tüm kategoriler</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -255,21 +286,11 @@ export function ReportsControls({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
         )}
-
         {has("segment") && (
-          <div className="space-y-1">
-            <Label htmlFor="segment">Segment</Label>
-            <Select
-              id="segment"
-              value={segment}
-              onChange={(e) => {
-                setSegment(e.target.value);
-                apply(e.target.value ? { ...params, segment: e.target.value } : omit(params, "segment"));
-              }}
-              className="w-32"
-            >
+          <Field label="Segment" id="segment">
+            <Select id="segment" value={v.segment} onChange={(e) => set("segment", e.target.value)} className="w-32">
               <option value="">Tümü</option>
               {SEGMENTS.map((s) => (
                 <option key={s} value={s}>
@@ -277,21 +298,11 @@ export function ReportsControls({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
         )}
-
         {has("kind") && (
-          <div className="space-y-1">
-            <Label htmlFor="kind">Firma türü</Label>
-            <Select
-              id="kind"
-              value={kind}
-              onChange={(e) => {
-                setKind(e.target.value);
-                apply(e.target.value ? { ...params, kind: e.target.value } : omit(params, "kind"));
-              }}
-              className="w-48"
-            >
+          <Field label="Firma türü" id="kind">
+            <Select id="kind" value={v.kind} onChange={(e) => set("kind", e.target.value)} className="w-48">
               <option value="">Tümü</option>
               {COMPANY_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -299,24 +310,51 @@ export function ReportsControls({
                 </option>
               ))}
             </Select>
-          </div>
+          </Field>
         )}
+        <div className="flex gap-2">
+          <Button onClick={() => apply()}>
+            <Check className="mr-1 h-4 w-4" /> Uygula
+          </Button>
+          <Button variant="outline" onClick={reset}>
+            <RotateCcw className="mr-1 h-4 w-4" /> Sıfırla
+          </Button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      {activeBadges.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground">Etkin filtreler:</span>
+          {activeBadges.map((b) => (
+            <Badge key={b} variant="secondary">
+              {b}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 border-t pt-3">
         <a href={singleHref} className={buttonVariants({ variant: "default" })}>
           <Download className="mr-2 h-4 w-4" />
-          {"Excel'e Aktar"}
+          {"Excel'e aktar"}
         </a>
         <a href={allHref} className={buttonVariants({ variant: "outline" })}>
-          <FileSpreadsheet className="mr-2 h-4 w-4" /> Tüm raporlar (tek dosya)
+          <FileSpreadsheet className="mr-2 h-4 w-4" /> Tüm raporlar (bu filtrelerle)
         </a>
+        <span className="self-center text-xs text-muted-foreground">
+          Tüm raporlar paketi tarih ve pazarlamacı süzgecini taşır
+          {heavy ? "; bu ağır rapor pakette yer almaz, tek başına indirilir." : "."}
+        </span>
       </div>
     </div>
   );
 }
 
-function omit(obj: Record<string, string>, key: string): Record<string, string> {
-  const { [key]: _removed, ...rest } = obj;
-  return rest;
+function Field({ label, id, children }: { label: string; id: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+    </div>
+  );
 }
