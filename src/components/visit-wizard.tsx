@@ -55,7 +55,8 @@ type StepDef =
   | { kind: "addons" }
   | { kind: "question"; q: QuestionWithOptions }
   | { kind: "contact" }
-  | { kind: "products" };
+  | { kind: "products" }
+  | { kind: "photos" };
 
 /** Codes that get a dedicated step; everything else renders as an extra question. */
 const HANDLED_CODES = new Set([
@@ -204,7 +205,7 @@ export function VisitWizard({
     [byCode, values]
   );
 
-  // Step order (spec K1): ekle → amaç → kişi → ürünler (yalnız yüz yüze) →
+  // Step order (spec K1): ekle → amaç → kişi → ürünler →
   // hizmet veren bayi (alt bayi / potansiyel) → ek sorular → not.
   const steps = useMemo<StepDef[]>(() => {
     const out: StepDef[] = [];
@@ -212,8 +213,8 @@ export function VisitWizard({
     const amac = byCode.get("ziyaret_amaci");
     if (amac) out.push({ kind: "question", q: amac });
     out.push({ kind: "contact" });
-    if (visitType === "yuz_yuze" && catOptions.length > 0)
-      out.push({ kind: "products" });
+    // Product matrix on every visit (phone included) whenever a catalog exists.
+    if (catOptions.length > 0) out.push({ kind: "products" });
     // Which kinds get "hizmet veren bayi" is decided by the question's
     // applies_to_kind (the questions prop is already filtered) — the same rule
     // the server applies, so a required step can never be hidden here.
@@ -226,8 +227,10 @@ export function VisitWizard({
     }
     const notes = byCode.get("serbest_not");
     if (notes) out.push({ kind: "question", q: notes });
+    // "Serbest not" can be deactivated by the office; keep the photo uploader.
+    else if (extraSlot) out.push({ kind: "photos" });
     return out;
-  }, [byCode, catOptions.length, questions, visitType, skipConditional]);
+  }, [byCode, catOptions.length, questions, skipConditional, extraSlot]);
 
   const total = steps.length;
   // A conditional question can vanish mid-flow — never point past the end.
@@ -649,6 +652,8 @@ export function VisitWizard({
               </div>
             </div>
           )}
+
+          {current?.kind === "photos" && <div className="space-y-3">{extraSlot}</div>}
 
           {current?.kind === "products" && (
             <div className="space-y-4">

@@ -48,7 +48,7 @@ export async function registerCompanyFromField(input: {
   const name = input.name.trim();
   if (!name) return { error: "Firma adı zorunludur." };
   if (!(FIELD_REGISTRABLE_KINDS as readonly string[]).includes(input.kind))
-    return { error: "Bu firma türü sahadan kaydedilemez." };
+    return { error: "Sahadan yalnızca potansiyel bayi veya diğer firma eklenebilir." };
   const plate = (input.plateCode ?? "").trim();
   if (plate && !/^[0-9]{2}$/.test(plate))
     return { error: "Plaka kodu 2 haneli olmalı (örn. 34)." };

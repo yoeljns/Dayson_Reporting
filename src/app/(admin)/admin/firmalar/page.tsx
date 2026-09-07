@@ -95,9 +95,9 @@ export default async function AdminCompaniesPage({
         <div>
           <h1 className="text-xl font-semibold">Firmalar</h1>
           <p className="text-sm text-muted-foreground">
-            Bayiler, sahadan eklenen potansiyel bayiler, alt bayiler ve rakip
-            noktaları. Satırdan pazarlamacı ataması, tür, plaka ve &quot;üzerinden
-            aldığı bayi&quot; düzenlenir; potansiyel bayi tek tıkla bayiye dönüştürülür.
+            Bayiler, potansiyel bayiler ve diğer firmalar. Satırdan pazarlamacı
+            ataması, tür, plaka ve &quot;üzerinden aldığı bayi&quot; düzenlenir; bir
+            firma tek tıkla bayiye dönüştürülür.
           </p>
         </div>
         <Link href="/admin/bayiler">

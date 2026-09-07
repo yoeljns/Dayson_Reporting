@@ -55,7 +55,12 @@ export function CompanyPicker({
 
   return (
     <div className="space-y-3">
-      <div className={cn("grid gap-2", kindList.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+      <div
+        className={cn(
+          "grid gap-2",
+          kindList.length === 1 ? "grid-cols-1" : kindList.length === 2 ? "grid-cols-2" : "grid-cols-3"
+        )}
+      >
         {kindList.map((k) => (
           <button
             key={k}
@@ -103,8 +108,8 @@ export function CompanyPicker({
               className="w-full"
               onClick={() => setShowNew(true)}
             >
-              <Plus className="mr-1 h-4 w-4" /> Yeni{" "}
-              {COMPANY_KIND_LABELS[kind].toLocaleLowerCase("tr")} ekle
+              <Plus className="mr-1 h-4 w-4" />{" "}
+              {kind === "non_customer" ? "Yeni potansiyel bayi ekle" : "Yeni firma ekle"}
             </Button>
           )}
         </>

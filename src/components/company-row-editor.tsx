@@ -176,7 +176,7 @@ export function CompanyRowEditor({ company }: { company: CompanyRowData }) {
         >
           Kaydet
         </Button>
-        {company.kind === "non_customer" && !convert && (
+        {company.kind !== "distributor" && !convert && (
           <Button size="sm" variant="outline" onClick={() => setConvert(true)}>
             <ArrowUpRight className="mr-1 h-4 w-4" /> Bayiye dönüştür
           </Button>

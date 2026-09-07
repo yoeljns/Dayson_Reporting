@@ -82,18 +82,6 @@ export async function toggleQuestionActive(input: {
 }): Promise<{ ok?: boolean; error?: string }> {
   await requireAdmin();
   const admin = createAdminClient();
-  if (!input.isActive) {
-    const { data: q } = await admin
-      .from("questions")
-      .select("code")
-      .eq("id", input.questionId)
-      .maybeSingle();
-    if (q && isFixedQuestionCode(q.code))
-      return {
-        error:
-          "Bu soru sihirbazın sabit adımlarından biri; pasifleştirilemez. Zorunluluğunu kaldırabilirsiniz.",
-      };
-  }
   const { error } = await admin
     .from("questions")
     .update({ is_active: input.isActive })
@@ -235,13 +223,6 @@ export async function deleteQuestion(input: {
 }): Promise<{ ok?: boolean; error?: string }> {
   await requireAdmin();
   const admin = createAdminClient();
-  const { data: q } = await admin
-    .from("questions")
-    .select("code")
-    .eq("id", input.questionId)
-    .maybeSingle();
-  if (q && isFixedQuestionCode(q.code))
-    return { error: "Sihirbazın sabit soruları silinemez." };
   const { error } = await admin
     .from("questions")
     .delete()

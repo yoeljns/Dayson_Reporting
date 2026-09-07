@@ -66,7 +66,9 @@ export function CompanySearch({
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           autoFocus
-          placeholder={`${COMPANY_KIND_LABELS[kind]} ara… (isim)`}
+          placeholder={
+            kind === "other" ? "Diğer firma ara… (isim)" : `${COMPANY_KIND_LABELS[kind]} ara… (isim)`
+          }
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           className="pl-9"

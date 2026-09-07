@@ -23,25 +23,22 @@ export const DEBT_STATUS_LABELS: Record<DebtStatus, string> = {
   bloke: "Bloke",
 };
 
-export const COMPANY_KINDS = [
-  "distributor",
-  "non_customer",
-  "sub_dealer",
-  "competitor_point",
-] as const;
-export type CompanyKind = (typeof COMPANY_KINDS)[number];
+/** Kinds shown in the UI. `sub_dealer` / `competitor_point` are retired enum
+ *  members (migrated to "other"); they stay in the type so old rows still typecheck. */
+export const COMPANY_KINDS = ["distributor", "non_customer", "other"] as const;
+export type CompanyKind =
+  | (typeof COMPANY_KINDS)[number]
+  | "sub_dealer"
+  | "competitor_point";
 export const COMPANY_KIND_LABELS: Record<CompanyKind, string> = {
   distributor: "Bayi / Distribütör",
-  non_customer: "Potansiyel bayi",
-  sub_dealer: "Alt bayi",
-  competitor_point: "Rakip noktası",
+  non_customer: "Potansiyel Bayi",
+  other: "Diğer",
+  sub_dealer: "Diğer",
+  competitor_point: "Diğer",
 };
 /** Kinds a salesperson may register from the field (dealers are opened by the office). */
-export const FIELD_REGISTRABLE_KINDS = [
-  "non_customer",
-  "sub_dealer",
-  "competitor_point",
-] as const;
+export const FIELD_REGISTRABLE_KINDS = ["non_customer", "other"] as const;
 
 export const ASSIGNMENT_ROLES = ["owner", "backup"] as const;
 export type AssignmentRole = (typeof ASSIGNMENT_ROLES)[number];

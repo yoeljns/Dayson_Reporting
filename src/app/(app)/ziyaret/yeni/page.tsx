@@ -177,7 +177,7 @@ function NewVisitForm() {
     <div className="mx-auto max-w-md space-y-4">
       <h1 className="text-lg font-semibold">Yeni Ziyaret</h1>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {COMPANY_KINDS.map((k) => (
           <button
             key={k}
@@ -210,7 +210,7 @@ function NewVisitForm() {
               onClick={() => setShowNewForm(true)}
             >
               <Plus className="mr-2 h-4 w-4" />
-              Yeni {COMPANY_KIND_LABELS[kind].toLocaleLowerCase("tr")} ekle
+              {kind === "non_customer" ? "Yeni potansiyel bayi ekle" : "Yeni firma ekle"}
             </Button>
           )}
           {kind === "distributor" && (

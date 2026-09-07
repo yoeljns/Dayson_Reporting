@@ -114,7 +114,7 @@ export default async function CompaniesPage({
             {kind !== "distributor" && (
               <>
                 {" "}
-                Yeni bir potansiyel bayi / alt bayi / rakip noktasını{" "}
+                Yeni bir potansiyel bayi veya başka bir firmayı{" "}
                 <Link href="/ziyaret/yeni" className="underline">
                   Yeni Ziyaret
                 </Link>{" "}

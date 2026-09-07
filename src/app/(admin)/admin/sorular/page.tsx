@@ -17,8 +17,8 @@ export default async function QuestionsPage() {
       <p className="text-sm text-muted-foreground">
         Ziyaret formundaki alanlar. Her soru için zorunluluk, hangi kanalda
         (telefon / yüz yüze) ve hangi firma türünde sorulacağı, seçenekler ve
-        sıra &quot;Düzenle&quot; ile yönetilir. Kilit simgeli sorular sihirbazın
-        sabit adımlarıdır; pasifleştirilemez ama zorunluluğu kaldırılabilir.
+        sıra &quot;Düzenle&quot; ile yönetilir. Pasife alınan soru sihirbazda
+        sorulmaz; eski cevaplar korunur.
       </p>
       <QuestionManager
         questions={(questions as QuestionWithOptions[]) ?? []}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, ArrowUp, ArrowDown, Lock, X } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmButton } from "@/components/confirm-button";
 import { useToast } from "@/components/ui/toast";
-import { isFixedQuestionCode } from "@/lib/question-codes";
 import { cn } from "@/lib/utils";
 import {
   VISIT_TYPES,
@@ -200,7 +199,6 @@ export function QuestionManager({ questions }: { questions: QuestionWithOptions[
                   </tr>
                 )}
                 {visible.map((q) => {
-                  const fixed = isFixedQuestionCode(q.code);
                   const idx = questions.findIndex((x) => x.id === q.id);
                   const scope = scopeSummary(q);
                   const isEditing = editing === q.id;
@@ -208,7 +206,6 @@ export function QuestionManager({ questions }: { questions: QuestionWithOptions[
                     <QuestionRow
                       key={q.id}
                       q={q}
-                      fixed={fixed}
                       first={idx === 0}
                       last={idx === questions.length - 1}
                       scope={scope}
@@ -236,7 +233,6 @@ export function QuestionManager({ questions }: { questions: QuestionWithOptions[
 
 function QuestionRow({
   q,
-  fixed,
   first,
   last,
   scope,
@@ -247,7 +243,6 @@ function QuestionRow({
   run,
 }: {
   q: QuestionWithOptions;
-  fixed: boolean;
   first: boolean;
   last: boolean;
   scope: string;
@@ -262,14 +257,17 @@ function QuestionRow({
       <tr className={cn("border-b align-top", !q.is_active && "text-muted-foreground")}>
         <td className="px-4 py-3">
           <div className="flex flex-wrap items-center gap-1.5 text-[15px] font-medium text-foreground">
-            {fixed && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
             <span className={cn(!q.is_active && "text-muted-foreground")}>{q.label_tr}</span>
           </div>
           <div className="text-xs text-muted-foreground">
-            {fixed ? "sabit" : "özel"}
-            {q.question_options.length > 0 &&
-              ` · ${q.question_options.map((o) => o.label_tr).join(", ")}`}
-            {scope && ` · ${scope}`}
+            {[
+              q.question_options.length > 0
+                ? q.question_options.map((o) => o.label_tr).join(", ")
+                : null,
+              scope || null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
         </td>
         <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{q.code}</td>
@@ -304,8 +302,7 @@ function QuestionRow({
             <Button
               variant="outline"
               size="sm"
-              disabled={pending || (fixed && q.is_active)}
-              title={fixed && q.is_active ? "Sabit soru pasifleştirilemez; zorunluluğunu kaldırabilirsiniz" : undefined}
+              disabled={pending}
               onClick={() =>
                 run(
                   () => toggleQuestionActive({ questionId: q.id, isActive: !q.is_active }),
@@ -321,7 +318,7 @@ function QuestionRow({
       {editing && (
         <tr className="border-b bg-muted/20">
           <td colSpan={6} className="p-4">
-            <QuestionEditor q={q} fixed={fixed} pending={pending} err={err} run={run} onClose={onEdit} />
+            <QuestionEditor q={q} pending={pending} err={err} run={run} onClose={onEdit} />
           </td>
         </tr>
       )}
@@ -331,14 +328,12 @@ function QuestionRow({
 
 function QuestionEditor({
   q,
-  fixed,
   pending,
   err,
   run,
   onClose,
 }: {
   q: QuestionWithOptions;
-  fixed: boolean;
   pending: boolean;
   err: string | null;
   run: (fn: () => Result, okMsg?: string, after?: () => void) => void;
@@ -391,18 +386,16 @@ function QuestionEditor({
           <Button size="sm" variant="outline" onClick={onClose}>
             Vazgeç
           </Button>
-          {!fixed && (
-            <ConfirmButton
-              size="sm"
-              variant="ghost"
-              className="text-destructive"
-              message={`"${q.label_tr}" sorusu silinsin mi? Cevabı olan sorular silinemez, pasifleştirin.`}
-              confirmText="Sil"
-              onConfirm={() => run(() => deleteQuestion({ questionId: q.id }), "Soru silindi", onClose)}
-            >
-              <Trash2 className="mr-1 h-4 w-4" /> Sil
-            </ConfirmButton>
-          )}
+          <ConfirmButton
+            size="sm"
+            variant="ghost"
+            className="text-destructive"
+            message={`"${q.label_tr}" sorusu silinsin mi? Cevabı olan sorular silinemez, pasifleştirin.`}
+            confirmText="Sil"
+            onConfirm={() => run(() => deleteQuestion({ questionId: q.id }), "Soru silindi", onClose)}
+          >
+            <Trash2 className="mr-1 h-4 w-4" /> Sil
+          </ConfirmButton>
         </div>
       </div>
 

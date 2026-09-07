@@ -321,7 +321,7 @@ export default async function ManagerDashboardPage() {
     {
       label: "Sahadan eklenen firma (bu hafta)",
       value: fieldCompanies?.length ?? 0,
-      href: "/admin/firmalar?tur=non_customer",
+      href: "/admin/firmalar",
       alert: false,
     },
     {

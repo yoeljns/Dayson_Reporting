@@ -186,7 +186,7 @@ export default async function HomePage() {
           className="flex items-center gap-2 rounded-md border bg-card p-3 text-sm text-muted-foreground hover:bg-accent"
         >
           <Search className="h-4 w-4" />
-          Firma ara… (bayi, potansiyel, alt bayi, rakip noktası)
+          Firma ara… (bayi, potansiyel bayi, diğer)
         </Link>
       </div>
 

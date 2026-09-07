@@ -1,7 +1,7 @@
 /**
- * Question codes the visit wizard hard-wires into dedicated steps. They cannot
- * be deleted or deactivated from the catalog — doing so would silently remove
- * a wizard step. Everything else in the catalog is admin-managed.
+ * Question codes the visit wizard renders as dedicated steps. The codes are
+ * reserved (a new question cannot reuse them); the questions themselves are
+ * fully admin-managed — deactivating one simply removes its wizard step.
  */
 export const FIXED_QUESTION_CODES = [
   "ziyaret_amaci",

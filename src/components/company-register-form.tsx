@@ -16,7 +16,12 @@ import {
 import { cn } from "@/lib/utils";
 import { newId } from "@/lib/uuid";
 import { registerCompanyFromField } from "@/app/(app)/ziyaret/actions";
-import { queueForm, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
+import {
+  queueForm,
+  isOnline,
+  isNetworkError,
+  OFFLINE_SAVED_MSG,
+} from "@/lib/offline";
 
 export type RegisteredCompany = { id: string; name: string; kind: CompanyKind };
 
@@ -42,7 +47,7 @@ export function CompanyRegisterForm({
   const { toast } = useToast();
   const clientId = useMemo(() => newId(), []);
   const registrable = (FIELD_REGISTRABLE_KINDS as readonly string[]).includes(
-    initialKind
+    initialKind,
   )
     ? initialKind
     : "non_customer";
@@ -53,7 +58,7 @@ export function CompanyRegisterForm({
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [buysFrom, setBuysFrom] = useState<{ id: string; name: string } | null>(
-    null
+    null,
   );
   const [pickingDealer, setPickingDealer] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +106,7 @@ export function CompanyRegisterForm({
           return;
         }
         setError(
-          "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
+          "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin.",
         );
       }
     });
@@ -110,7 +115,7 @@ export function CompanyRegisterForm({
   return (
     <div className="space-y-3">
       {!lockKind && (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {FIELD_REGISTRABLE_KINDS.map((k) => (
             <button
               key={k}
@@ -120,7 +125,7 @@ export function CompanyRegisterForm({
                 "rounded-md border px-2 py-1.5 text-xs font-medium",
                 kind === k
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "hover:bg-accent"
+                  : "hover:bg-accent",
               )}
             >
               {COMPANY_KIND_LABELS[k]}
@@ -156,7 +161,9 @@ export function CompanyRegisterForm({
             maxLength={2}
             placeholder="34"
             value={plate}
-            onChange={(e) => setPlate(e.target.value.replace(/\D/g, "").slice(0, 2))}
+            onChange={(e) =>
+              setPlate(e.target.value.replace(/\D/g, "").slice(0, 2))
+            }
             className={!plateOk ? "border-destructive" : undefined}
           />
         </div>
@@ -171,53 +178,51 @@ export function CompanyRegisterForm({
         />
       </div>
 
-      {kind !== "competitor_point" && (
-        <div className="space-y-1">
-          <Label>Hangi bayi üzerinden alıyor?</Label>
-          {buysFrom ? (
-            <div className="flex items-center justify-between rounded-md border p-2 text-sm">
-              <span className="font-medium">{buysFrom.name}</span>
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={() => setBuysFrom(null)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ) : pickingDealer ? (
-            <div className="rounded-md border p-2">
-              <CompanySearch
-                kind="distributor"
-                minChars={2}
-                onSelect={(c) => {
-                  setBuysFrom({ id: c.id, name: c.name });
-                  setPickingDealer(false);
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-1 w-full"
-                onClick={() => setPickingDealer(false)}
-              >
-                Vazgeç
-              </Button>
-            </div>
-          ) : (
+      <div className="space-y-1">
+        <Label>Hangi bayi üzerinden alıyor?</Label>
+        {buysFrom ? (
+          <div className="flex items-center justify-between rounded-md border p-2 text-sm">
+            <span className="font-medium">{buysFrom.name}</span>
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setBuysFrom(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : pickingDealer ? (
+          <div className="rounded-md border p-2">
+            <CompanySearch
+              kind="distributor"
+              minChars={2}
+              onSelect={(c) => {
+                setBuysFrom({ id: c.id, name: c.name });
+                setPickingDealer(false);
+              }}
+            />
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="w-full"
-              onClick={() => setPickingDealer(true)}
+              className="mt-1 w-full"
+              onClick={() => setPickingDealer(false)}
             >
-              Bayi seç (isteğe bağlı)
+              Vazgeç
             </Button>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => setPickingDealer(true)}
+          >
+            Bayi seç (isteğe bağlı)
+          </Button>
+        )}
+      </div>
 
       <div className="space-y-1">
         <Label htmlFor="crf-notes">Not</Label>
