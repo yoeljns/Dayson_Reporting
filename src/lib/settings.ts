@@ -100,3 +100,50 @@ export async function getPlanDeadline(): Promise<PlanDeadline> {
     return DEFAULT_PLAN_DEADLINE;
   }
 }
+
+export type PaceThresholds = { ahead: number; onTrack: number };
+export const DEFAULT_STALE_DAYS = 30;
+export const DEFAULT_PACE_THRESHOLDS: PaceThresholds = { ahead: 1.05, onTrack: 0.9 };
+
+/** Days without a visit/count after which a dealer is flagged. */
+export async function getStaleDays(): Promise<number> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "stale_days")
+      .maybeSingle();
+    const v = (data?.value ?? null) as { days?: unknown } | null;
+    const n = Number(v?.days);
+    return Number.isFinite(n) && n >= 1 ? clamp(n, 1, 365) : DEFAULT_STALE_DAYS;
+  } catch {
+    return DEFAULT_STALE_DAYS;
+  }
+}
+
+/** Target pace thresholds: ratio ≥ ahead → "Önde", ≥ onTrack → "Yolunda". */
+export async function getPaceThresholds(): Promise<PaceThresholds> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "target_pace_thresholds")
+      .maybeSingle();
+    const v = (data?.value ?? null) as Partial<PaceThresholds> | null;
+    const ahead = Number(v?.ahead);
+    const onTrack = Number(v?.onTrack);
+    if (
+      Number.isFinite(ahead) &&
+      Number.isFinite(onTrack) &&
+      ahead > onTrack &&
+      onTrack > 0 &&
+      ahead <= 3
+    )
+      return { ahead, onTrack };
+    return DEFAULT_PACE_THRESHOLDS;
+  } catch {
+    return DEFAULT_PACE_THRESHOLDS;
+  }
+}

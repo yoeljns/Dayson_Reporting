@@ -17,11 +17,13 @@ const adminLinks = [
   { href: "/admin/rakip-haritasi", label: "Rakip Haritası", adminOnly: false, group: "ops" },
   { href: "/admin/bayiler", label: "Bayiler", adminOnly: false, group: "ops" },
   { href: "/admin/anketler", label: "Özel Raporlar", adminOnly: false, group: "ops" },
+  { href: "/admin/stok", label: "Stok Durumu", adminOnly: false, group: "ops" },
   { href: "/admin/silinen-ziyaretler", label: "Silinenler", adminOnly: false, group: "ops" },
   { href: "/admin/import", label: "Excel İçe Aktar", adminOnly: true, group: "cfg" },
   { href: "/admin/kullanicilar", label: "Kullanıcılar", adminOnly: true, group: "cfg" },
   { href: "/admin/sorular", label: "Soru Kataloğu", adminOnly: true, group: "cfg" },
   { href: "/admin/urun-rekabeti", label: "Ürün Rekabeti", adminOnly: true, group: "cfg" },
+  { href: "/admin/urunler", label: "Ürünler", adminOnly: true, group: "cfg" },
   { href: "/admin/ayarlar", label: "Ayarlar", adminOnly: true, group: "cfg" },
 ];
 
