@@ -21,7 +21,7 @@ export default async function AppLayout({
         fullName={profile.full_name || profile.email}
         managementMode={isManagementMode(profile)}
       />
-      <OfflineSync />
+      <OfflineSync userId={profile.id} />
       <main className="container py-4">{children}</main>
     </div>
   );

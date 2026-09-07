@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { queueVisit, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 import { visitCode } from "@/lib/codes";
 import {
@@ -64,8 +65,10 @@ export function VisitWizard({
   visitId,
   isOwner,
   companyId,
+  companyName = "",
   companyKind,
   visitType,
+  visitDate,
   questions,
   existingAnswers,
   categories,
@@ -80,8 +83,11 @@ export function VisitWizard({
   visitId: string;
   isOwner: boolean;
   companyId: string;
+  companyName?: string;
   companyKind: CompanyKind;
   visitType: VisitType;
+  /** YYYY-MM-DD — carried into the offline queue payload. */
+  visitDate: string;
   questions: QuestionWithOptions[];
   existingAnswers: VisitAnswer[];
   categories: CategoryOption[];
@@ -109,6 +115,8 @@ export function VisitWizard({
   // Guards the warning against out-of-order autosave results: only the most
   // recently started save may set/clear it.
   const autosaveSeq = useRef(0);
+  // Set by saveAll when the save went to the offline queue instead of the server.
+  const queuedRef = useRef(false);
   const stepKey = `visit-step:${visitId}`;
   const [step, setStep] = useState(0);
 
@@ -373,6 +381,19 @@ export function VisitWizard({
       if (err) return setError(err);
       autosaveSeq.current++; // a stale in-flight autosave may not re-warn
       setAutosaveWarn(false);
+      if (queuedRef.current) {
+        queuedRef.current = false;
+        toast(OFFLINE_SAVED_MSG, "info");
+        if (complete) {
+          try {
+            localStorage.removeItem(stepKey);
+          } catch {
+            /* ignore */
+          }
+          router.push("/");
+        }
+        return;
+      }
       if (complete) {
         try {
           localStorage.removeItem(stepKey);
@@ -393,6 +414,26 @@ export function VisitWizard({
   /** Save everything; returns an error message or null. Never throws — a
    *  dropped connection must not silently escape startTransition. */
   async function saveAll(complete: boolean): Promise<string | null> {
+    const queueOffline = async () => {
+      try {
+        await queueVisit(`Ziyaret · ${companyName}`, {
+          visitId,
+          create: false,
+          companyId,
+          visitType,
+          visitDate,
+          answers: buildAnswers(),
+          selections: buildProductSelections(),
+          contactId,
+          complete,
+        });
+        queuedRef.current = true;
+        return null;
+      } catch {
+        return "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin. Girdikleriniz bu ekranda duruyor.";
+      }
+    };
+    if (!isOnline()) return queueOffline();
     try {
       const p1 = await saveVisitProducts({
         visitId,
@@ -408,7 +449,8 @@ export function VisitWizard({
       });
       if (p3.error) return p3.error;
       return null;
-    } catch {
+    } catch (e) {
+      if (isNetworkError(e)) return queueOffline();
       return "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin. Girdikleriniz bu ekranda duruyor.";
     }
   }

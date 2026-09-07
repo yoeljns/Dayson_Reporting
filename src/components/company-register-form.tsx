@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { newId } from "@/lib/uuid";
 import { registerCompanyFromField } from "@/app/(app)/ziyaret/actions";
+import { queueForm, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
 
 export type RegisteredCompany = { id: string; name: string; kind: CompanyKind };
 
@@ -64,25 +65,41 @@ export function CompanyRegisterForm({
     setError(null);
     if (!name.trim()) return setError("Firma adı zorunludur.");
     if (!plateOk) return setError("Plaka kodu 2 haneli olmalı (örn. 34).");
+    const input = {
+      kind,
+      name,
+      city,
+      plateCode: plate,
+      phone,
+      buysFromCompanyId: buysFrom?.id ?? null,
+      notes,
+      clientId,
+    };
+    // Offline: the company gets its client id now, so a visit/observation can
+    // already reference it; the server row appears on reconnect.
+    const queue = async () => {
+      await queueForm("firma", `Firma · ${name.trim()}`, input);
+      toast(OFFLINE_SAVED_MSG, "info");
+      onCreated({ id: clientId, name: name.trim(), kind });
+    };
+    if (!isOnline()) {
+      startTransition(queue);
+      return;
+    }
     startTransition(async () => {
       try {
-        const res = await registerCompanyFromField({
-          kind,
-          name,
-          city,
-          plateCode: plate,
-          phone,
-          buysFromCompanyId: buysFrom?.id ?? null,
-          notes,
-          clientId,
-        });
+        const res = await registerCompanyFromField(input);
         if (res.error || !res.id) {
           setError(res.error ?? "Firma kaydedilemedi.");
           return;
         }
         toast(`Firma eklendi · ${name.trim()}`, "ok");
         onCreated({ id: res.id, name: name.trim(), kind });
-      } catch {
+      } catch (e) {
+        if (isNetworkError(e)) {
+          await queue();
+          return;
+        }
         setError(
           "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
         );

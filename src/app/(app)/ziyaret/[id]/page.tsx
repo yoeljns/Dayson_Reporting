@@ -354,8 +354,10 @@ export default async function VisitDetailPage({
         visitId={visit.id}
         isOwner={isOwner}
         companyId={company?.id ?? ""}
+        companyName={company?.name ?? ""}
         companyKind={(company?.kind ?? "distributor") as CompanyKind}
         visitType={visit.visit_type as VisitType}
+        visitDate={visit.visit_date as string}
         questions={applicable}
         existingAnswers={(answers as VisitAnswer[]) ?? []}
         categories={categoryOptions}

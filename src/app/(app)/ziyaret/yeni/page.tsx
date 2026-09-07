@@ -22,7 +22,9 @@ import {
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/week";
 import { createDraftVisit } from "../actions";
-import { enqueueVisit } from "@/lib/offline";
+import { queueVisit, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
+import { newId } from "@/lib/uuid";
+import { useToast } from "@/components/ui/toast";
 
 type Selected = { id: string; name: string };
 
@@ -36,6 +38,7 @@ export default function NewVisitPage() {
 
 function NewVisitForm() {
   const router = useRouter();
+  const { toast } = useToast();
   const presetCompany = useSearchParams().get("company");
   const today = todayIso();
   const [kind, setKind] = useState<CompanyKind>("distributor");
@@ -64,32 +67,45 @@ function NewVisitForm() {
     if (!selected) return;
     setError(null);
 
-    // Offline: queue the draft locally; OfflineSync flushes it on reconnect.
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      startTransition(async () => {
-        await enqueueVisit({
-          companyId: selected.id,
-          companyName: selected.name,
-          visitType,
-          visitDate,
-        });
-        window.dispatchEvent(new Event("dayson:offline-queue"));
-        router.push("/");
+    // Offline: queue a bare draft with a client id; the sync badge sends it
+    // on reconnect and the rep continues it from "Tamamlanmamış ziyaretler".
+    const queueDraft = async () => {
+      await queueVisit(`Ziyaret · ${selected.name}`, {
+        visitId: newId(),
+        create: true,
+        companyId: selected.id,
+        visitType,
+        visitDate,
+        answers: [],
+        selections: [],
+        contactId: null,
+        bare: true,
+        complete: false,
       });
+      toast(OFFLINE_SAVED_MSG, "info");
+      router.push("/");
+    };
+    if (!isOnline()) {
+      startTransition(queueDraft);
       return;
     }
 
     startTransition(async () => {
-      const res = await createDraftVisit({
-        companyId: selected.id,
-        visitType,
-        visitDate,
-      });
-      if (res.error || !res.id) {
-        setError(res.error ?? "Ziyaret oluşturulamadı.");
-        return;
+      try {
+        const res = await createDraftVisit({
+          companyId: selected.id,
+          visitType,
+          visitDate,
+        });
+        if (res.error || !res.id) {
+          setError(res.error ?? "Ziyaret oluşturulamadı.");
+          return;
+        }
+        router.push(`/ziyaret/${res.id}`);
+      } catch (e) {
+        if (isNetworkError(e)) await queueDraft();
+        else setError("Ziyaret oluşturulamadı.");
       }
-      router.push(`/ziyaret/${res.id}`);
     });
   }
 

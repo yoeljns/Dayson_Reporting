@@ -23,6 +23,13 @@ import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
 import { useToast } from "@/components/ui/toast";
 import { newId } from "@/lib/uuid";
 import { complaintCode } from "@/lib/codes";
+import {
+  queueForm,
+  queuePhotoBlob,
+  isOnline,
+  isNetworkError,
+  OFFLINE_SAVED_MSG,
+} from "@/lib/offline";
 
 export default function NewComplaintPage() {
   return (
@@ -146,6 +153,33 @@ function NewComplaintForm() {
         return;
       }
     }
+    const input = {
+      id: editId,
+      clientId: editId ? null : clientId,
+      companyId: company?.id ?? null,
+      complainantName: complainantName || null,
+      complainantPhone: complainantPhone || null,
+      visitId,
+      type,
+      productCategoryId: productCategoryId || null,
+      description,
+      priority,
+      dueDate: dueDate || null,
+      isDraft,
+    };
+    const queue = async () => {
+      await queueForm("sikayet", `Şikayet · ${company?.name ?? (complainantName || "kayıt")}`, input, {
+        refTable: "complaint",
+        refId: editId ?? clientId,
+        list: photos,
+      });
+      toast(OFFLINE_SAVED_MSG, "info");
+      router.push(returnTo || "/sikayetler");
+    };
+    if (!isOnline()) {
+      startTransition(queue);
+      return;
+    }
     startTransition(async () => {
       try {
         const res = await saveComplaint({
@@ -186,7 +220,11 @@ function NewComplaintForm() {
             returnTo ? `?return=${encodeURIComponent(returnTo)}` : ""
           }`
         );
-      } catch {
+      } catch (e) {
+        if (isNetworkError(e)) {
+          await queue();
+          return;
+        }
         setError(
           "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
         );
@@ -304,6 +342,9 @@ function NewComplaintForm() {
               refId={editId ?? clientId}
               value={photos}
               onChange={setPhotos}
+              onOffline={(p) =>
+                queuePhotoBlob({ ...p, refTable: "complaint", refId: editId ?? clientId })
+              }
             />
           </div>
 

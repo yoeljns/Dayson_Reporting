@@ -15,6 +15,13 @@ import { formatTRDate } from "@/lib/week";
 import { stockCountCode } from "@/lib/codes";
 import { saveStockCount } from "@/app/(app)/stok/actions";
 import { attachPhotos } from "@/app/(app)/foto/actions";
+import {
+  queueForm,
+  queuePhotoBlob,
+  isOnline,
+  isNetworkError,
+  OFFLINE_SAVED_MSG,
+} from "@/lib/offline";
 
 export type StockSku = { id: string; code: string; name_tr: string; category: string | null };
 export type LastCount = { pallets: number; countedAt: string };
@@ -63,18 +70,32 @@ export function StockCountForm({
     setError(null);
     if (!picked) return setError("Bayi seçin.");
     if (total <= 0) return setError("En az bir ürün için palet girin.");
+    const input = {
+      id: clientId,
+      companyId: picked.id,
+      visitId,
+      countedAt: visitDate,
+      note,
+      lines: skus
+        .filter((s) => (pallets[s.id] ?? 0) > 0)
+        .map((s) => ({ skuId: s.id, pallets: pallets[s.id] })),
+    };
+    const queue = async () => {
+      await queueForm("stok", `Stok sayımı · ${picked.name}`, input, {
+        refTable: "stock_count",
+        refId: clientId,
+        list: photos,
+      });
+      toast(OFFLINE_SAVED_MSG, "info");
+      router.push(returnTo || "/");
+    };
+    if (!isOnline()) {
+      startTransition(queue);
+      return;
+    }
     startTransition(async () => {
       try {
-        const res = await saveStockCount({
-          id: clientId,
-          companyId: picked.id,
-          visitId,
-          countedAt: visitDate,
-          note,
-          lines: skus
-            .filter((s) => (pallets[s.id] ?? 0) > 0)
-            .map((s) => ({ skuId: s.id, pallets: pallets[s.id] })),
-        });
+        const res = await saveStockCount(input);
         if (res.error || !res.id) return setError(res.error ?? "Kaydedilemedi.");
         const uploaded = photos.filter((p) => p.status === "uploaded");
         if (uploaded.length > 0) {
@@ -92,7 +113,11 @@ export function StockCountForm({
         }
         toast(`Stok sayımı kaydedildi · ${stockCountCode(res.id)}`, "ok");
         router.push(returnTo || `/firma/${picked.id}?tab=stok`);
-      } catch {
+      } catch (e) {
+        if (isNetworkError(e)) {
+          await queue();
+          return;
+        }
         setError("Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin.");
       }
     });
@@ -173,6 +198,9 @@ export function StockCountForm({
             refId={clientId}
             value={photos}
             onChange={setPhotos}
+            onOffline={(p) =>
+              queuePhotoBlob({ ...p, refTable: "stock_count", refId: clientId })
+            }
           />
         </div>
 

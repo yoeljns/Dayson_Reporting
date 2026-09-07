@@ -15,6 +15,7 @@ import { selectOptions, scaleBounds, surveyAnswerGiven } from "@/lib/rules/surve
 import type { CompanyKind } from "@/lib/enums";
 import type { SurveyQuestion } from "@/types/db";
 import { saveSurveyAnswer, type SurveyAnswerValue } from "@/app/(app)/anket/actions";
+import { queueForm, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
 
 export function SurveyForm({
   surveyId,
@@ -58,20 +59,34 @@ export function SurveyForm({
     if (!picked) return setError("Firma seçin.");
     if (missing.length > 0)
       return setError(`"${missing[0].prompt}" sorusu zorunludur.`);
+    const input = {
+      clientId,
+      surveyId,
+      companyId: picked.id,
+      visitId,
+      answers,
+      answeredAt: visitDate,
+    };
+    const queue = async () => {
+      await queueForm("anket", `Özel rapor · ${picked.name}`, input);
+      toast(OFFLINE_SAVED_MSG, "info");
+      router.push(returnTo || "/anket");
+    };
+    if (!isOnline()) {
+      startTransition(queue);
+      return;
+    }
     startTransition(async () => {
       try {
-        const res = await saveSurveyAnswer({
-          clientId,
-          surveyId,
-          companyId: picked.id,
-          visitId,
-          answers,
-          answeredAt: visitDate,
-        });
+        const res = await saveSurveyAnswer(input);
         if (res.error) return setError(res.error);
         toast("Özel rapor kaydedildi", "ok");
         router.push(returnTo || "/anket");
-      } catch {
+      } catch (e) {
+        if (isNetworkError(e)) {
+          await queue();
+          return;
+        }
         setError("Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin.");
       }
     });

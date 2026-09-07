@@ -7,6 +7,7 @@ import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
 import { PhotoGrid } from "@/components/photo-grid";
 import type { PhotoView } from "@/lib/photos/server";
 import type { DocumentRefTable } from "@/lib/enums";
+import { queuePhotoBlob, queuePhotos } from "@/lib/offline";
 
 /**
  * Photos section of an existing record: current photos (deletable by the
@@ -58,6 +59,20 @@ export function RecordPhotos({
             // Drop attached entries once the server list catches up.
             setPending((prev) => prev.filter((p) => p.status !== "attached"));
             router.refresh();
+          }}
+          onOffline={async (p) => {
+            await queuePhotoBlob({ ...p, refTable, refId });
+            // The record already exists → a photos op can be queued right away.
+            await queuePhotos(title ?? "Fotoğraf", refTable, refId, [
+              {
+                documentId: p.documentId,
+                path: "",
+                mime: p.mime,
+                sizeBytes: p.blob.size,
+                status: "queued",
+                previewUrl: "",
+              },
+            ]);
           }}
         />
       )}

@@ -50,7 +50,7 @@ export default async function AdminLayout({
       />
       {/* Managers land here in management mode — keep flushing any queued
           offline drafts they made while reporting. */}
-      <OfflineSync />
+      <OfflineSync userId={profile.id} />
       <div className="container py-4">
         <div className="mb-4 flex flex-wrap items-center gap-2 overflow-x-auto border-b pb-2 print:hidden">
           {opsLinks.map((l) => (

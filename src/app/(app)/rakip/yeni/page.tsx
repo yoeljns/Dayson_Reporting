@@ -17,6 +17,13 @@ import { Badge } from "@/components/ui/badge";
 import { newId } from "@/lib/uuid";
 import { attachPhotos } from "@/app/(app)/foto/actions";
 import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
+import {
+  queueForm,
+  queuePhotoBlob,
+  isOnline,
+  isNetworkError,
+  OFFLINE_SAVED_MSG,
+} from "@/lib/offline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -145,6 +152,33 @@ function NewCompetitorObservationForm() {
       setError("Ürün seçin veya adını yazın.");
       return;
     }
+    const input = {
+      id: editId,
+      clientId: editId ? null : clientId,
+      competitorId: competitor.id,
+      competitorProductId: product?.id ?? null,
+      companyId: company?.id ?? null,
+      visitId,
+      productName: finalName,
+      observedPrice: price === "" ? null : Number(price),
+      city: city || null,
+      note: note || null,
+      observedAt: visitDate,
+      isDraft,
+    };
+    const queue = async () => {
+      await queueForm("rakip", `Rakip bilgisi · ${competitor.name}`, input, {
+        refTable: "competitor_observation",
+        refId: editId ?? clientId,
+        list: photos,
+      });
+      toast(OFFLINE_SAVED_MSG, "info");
+      router.push(returnTo || "/rakip");
+    };
+    if (!isOnline()) {
+      startTransition(queue);
+      return;
+    }
     startTransition(async () => {
       try {
         const res = await saveObservation({
@@ -193,7 +227,11 @@ function NewCompetitorObservationForm() {
         setProductName("");
         setPrice("");
         setNote("");
-      } catch {
+      } catch (e) {
+        if (isNetworkError(e)) {
+          await queue();
+          return;
+        }
         setError(
           "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
         );
@@ -302,6 +340,13 @@ function NewCompetitorObservationForm() {
               refId={editId ?? clientId}
               value={photos}
               onChange={setPhotos}
+              onOffline={(p) =>
+                queuePhotoBlob({
+                  ...p,
+                  refTable: "competitor_observation",
+                  refId: editId ?? clientId,
+                })
+              }
             />
           </div>
 
