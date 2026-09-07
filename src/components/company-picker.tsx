@@ -21,6 +21,7 @@ export function CompanyPicker({
   onChange,
   minChars = 0,
   allowCreate = false,
+  kinds,
 }: {
   value: PickedCompany | null;
   onChange: (c: PickedCompany | null) => void;
@@ -28,8 +29,11 @@ export function CompanyPicker({
   minChars?: number;
   /** Allow registering a new (non-dealer) company on the fly. */
   allowCreate?: boolean;
+  /** Restrict the kind toggle (e.g. a survey targeting only sub-dealers). */
+  kinds?: readonly CompanyKind[];
 }) {
-  const [kind, setKind] = useState<CompanyKind>("distributor");
+  const kindList = kinds && kinds.length > 0 ? kinds : COMPANY_KINDS;
+  const [kind, setKind] = useState<CompanyKind>(kindList[0]);
   const [showNew, setShowNew] = useState(false);
   const canRegister = (FIELD_REGISTRABLE_KINDS as readonly string[]).includes(kind);
 
@@ -51,8 +55,8 @@ export function CompanyPicker({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
-        {COMPANY_KINDS.map((k) => (
+      <div className={cn("grid gap-2", kindList.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+        {kindList.map((k) => (
           <button
             key={k}
             type="button"

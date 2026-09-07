@@ -24,6 +24,8 @@ import type { CompanyKind, VisitType } from "@/lib/enums";
 import { applicableQuestions } from "@/lib/visit-questions";
 import { visitCode } from "@/lib/codes";
 import { getPhotosFor } from "@/lib/photos/server";
+import { surveyMatches } from "@/lib/rules/survey";
+import type { Survey } from "@/types/db";
 import { RecordPhotos } from "@/components/visit-photos";
 
 const statusVariant: Record<
@@ -54,8 +56,6 @@ export default async function VisitDetailPage({
 
   if (!visit) notFound();
   const isOwner = visit.salesperson_id === profile.id;
-  const photos = await getPhotosFor("visit", visit.id);
-  const canEditPhotos = isOwner || profile.role !== "salesperson";
 
   const company = Array.isArray(visit.companies)
     ? visit.companies[0]
@@ -67,6 +67,27 @@ export default async function VisitDetailPage({
         segment: string | null;
         debt_status: string | null;
       } | null);
+
+  const [photos, { data: activeSurveys }, { data: companyPlate }] = await Promise.all([
+    getPhotosFor("visit", visit.id),
+    isOwner
+      ? supabase.from("surveys").select("*").eq("status", "aktif")
+      : Promise.resolve({ data: [] as Survey[] }),
+    company
+      ? supabase.from("companies").select("plate_code").eq("id", company.id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const canEditPhotos = isOwner || profile.role !== "salesperson";
+  const addonSurveys = ((activeSurveys as Survey[] | null) ?? [])
+    .filter((s) =>
+      surveyMatches(s, {
+        kind: company?.kind ?? null,
+        plate: (companyPlate as { plate_code: string | null } | null)?.plate_code ?? null,
+        repId: profile.id,
+        date: visit.visit_date as string,
+      })
+    )
+    .map((s) => ({ id: s.id, name: s.name }));
 
   const [
     { data: questions },
@@ -306,6 +327,7 @@ export default async function VisitDetailPage({
         contacts={(contacts as CompanyContact[]) ?? []}
         currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}
+        addonSurveys={addonSurveys}
         extraSlot={
           <RecordPhotos
             refTable="visit"
