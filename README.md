@@ -69,6 +69,16 @@ npm run dev
 > Şemayı elle kurmak isterseniz `supabase/migrations/0001_init.sql` ve
 > `0002_seed.sql` dosyalarını Supabase SQL editöründe çalıştırabilirsiniz; bu
 > durumda otomatik kurulum atlanır.
+>
+> Yamaları elle uyguluyorsanız `NNNN_enums_*.sql` dosyalarını (örn. `0019`)
+> **tek başına ve önce** çalıştırın: Postgres, aynı işlemde eklenen bir enum
+> değerinin kullanılmasına izin vermez. Uygulama bunu kendisi yapar (enum yaması
+> ayrı bir adımda, sonra diğer yamalar tek işlemde).
+
+Fotoğraf eklentisi için `SUPABASE_SERVICE_ROLE_KEY` gereklidir: uygulama özel
+`field-photos` bucket'ını Storage API ile kendisi açar; SQL tarafında Storage'a
+dokunulmaz. Anahtar yoksa fotoğraf yükleme "Fotoğraf servisi yapılandırılmamış"
+uyarısı verir, geri kalan her şey çalışır.
 
 ## Veri akışı
 
