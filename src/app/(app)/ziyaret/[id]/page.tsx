@@ -30,7 +30,8 @@ import { surveyMatches } from "@/lib/rules/survey";
 import { getTargetFor } from "@/lib/targets/server";
 import { elapsedFractionOfYear, paceOf, sumLines, fmtEur } from "@/lib/rules/target";
 import { getPaceThresholds } from "@/lib/settings";
-import { todayIso } from "@/lib/week";
+import { todayIso, formatTRDate } from "@/lib/week";
+import { VisitDateEditor } from "@/components/visit-date-editor";
 import type { Survey } from "@/types/db";
 import { RecordPhotos } from "@/components/visit-photos";
 
@@ -287,7 +288,13 @@ export default async function VisitDetailPage({
           <p className="text-sm text-muted-foreground">
             <span className="font-mono">{visitCode(visit.id)}</span> ·{" "}
             {VISIT_TYPE_LABELS[visit.visit_type as keyof typeof VISIT_TYPE_LABELS]}{" "}
-            · {visit.visit_date} ·{" "}
+            ·{" "}
+            {isOwner ? (
+              <VisitDateEditor visitId={visit.id} visitDate={visit.visit_date as string} />
+            ) : (
+              formatTRDate(visit.visit_date as string)
+            )}{" "}
+            ·{" "}
             {company
               ? COMPANY_KIND_LABELS[company.kind as keyof typeof COMPANY_KIND_LABELS]
               : ""}

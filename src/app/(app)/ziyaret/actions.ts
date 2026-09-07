@@ -167,6 +167,53 @@ export async function deleteVisit(
   return { ok: true };
 }
 
+/** Change a visit's date afterwards (owner only, any status). Future dates
+ *  are rejected; reports and "son ziyaret" views follow visit_date. */
+export async function updateVisitDate(input: {
+  visitId: string;
+  visitDate: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+
+  const picked = (input.visitDate ?? "").trim();
+  if (!isValidVisitDate(picked, todayIso()))
+    return { error: "Geçersiz tarih. Bugün veya geçmiş bir gün seçin." };
+
+  const { data: v } = await supabase
+    .from("visits")
+    .select("salesperson_id, deleted_at, company_id")
+    .eq("id", input.visitId)
+    .maybeSingle();
+  if (!v) return { error: "Ziyaret bulunamadı." };
+  if (v.salesperson_id !== user.id)
+    return { error: "Yalnızca kendi ziyaretinizin tarihini değiştirebilirsiniz." };
+  if (v.deleted_at) return { error: "Silinmiş ziyaret düzenlenemez." };
+
+  const { error } = await supabase
+    .from("visits")
+    .update({ visit_date: picked, updated_at: new Date().toISOString() })
+    .eq("id", input.visitId);
+  if (error) return { error: error.message };
+
+  for (const p of [
+    "/",
+    "/ziyaretler",
+    `/ziyaret/${input.visitId}`,
+    "/plan",
+    "/son-ziyaretler",
+    "/firmalar",
+    `/firma/${v.company_id}`,
+    "/admin/ziyaretler",
+    `/admin/bayi/${v.company_id}`,
+  ])
+    revalidatePath(p);
+  return { ok: true };
+}
+
 /** Create (or reuse) a company contact and return its id. */
 export async function upsertContact(input: {
   companyId: string;
