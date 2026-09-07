@@ -14,6 +14,7 @@ import {
   daysSince,
   formatTRDate,
 } from "@/lib/week";
+import { groupAssignments, repsLabel } from "@/lib/assignments";
 
 const STALE_DAYS = 30;
 // Dealer/visit universe for one distributor network — far above any real count,
@@ -68,7 +69,7 @@ export default async function ManagerDashboardPage() {
       .limit(DEALER_CAP),
     supabase
       .from("assignments")
-      .select("company_id, salesperson_id")
+      .select("company_id, salesperson_id, role")
       .limit(DEALER_CAP),
     supabase
       .from("company_last_visit")
@@ -140,9 +141,7 @@ export default async function ManagerDashboardPage() {
   ]);
 
   // Dealer coverage: which distributors are unassigned or long-unvisited.
-  const assignedTo = new Map(
-    (assignments ?? []).map((a) => [a.company_id, a.salesperson_id])
-  );
+  const assignedTo = groupAssignments(assignments);
   const lastVisitMap = new Map(
     (lastVisits ?? []).map((r) => [
       r.company_id,
@@ -324,7 +323,9 @@ export default async function ManagerDashboardPage() {
             allHref="/admin/son-ziyaretler"
           >
             {staleDealers.slice(0, 5).map((d) => {
-              const sp = assignedTo.get(d.id);
+              const spLabel = repsLabel(assignedTo.get(d.id), (id) =>
+                spName.get(id)
+              );
               return (
                 <Link
                   key={d.id}
@@ -336,7 +337,7 @@ export default async function ManagerDashboardPage() {
                       {d.name}
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      {(sp && spName.get(sp)) || "Atanmamış"}
+                      {spLabel}
                     </span>
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">

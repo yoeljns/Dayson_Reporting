@@ -1,18 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireManager } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Archive (soft-delete) any visit — including completed ones and other reps' —
- * from the admin history page. RLS only lets a rep delete their own visits, so
- * this uses the service-role client behind a requireAdmin() gate.
+ * from the office history page. RLS only lets a rep delete their own visits, so
+ * this uses the service-role client behind a requireManager() gate.
  */
 export async function adminDeleteVisit(
   visitId: string
 ): Promise<{ ok?: boolean; error?: string }> {
-  const admin = await requireAdmin();
+  const admin = await requireManager();
   const client = createAdminClient();
   const { error } = await client
     .from("visits")
@@ -24,11 +24,11 @@ export async function adminDeleteVisit(
   return { ok: true };
 }
 
-/** Restore a previously archived visit. */
+/** Restore a previously archived visit (managers and admins). */
 export async function restoreVisit(
   visitId: string
 ): Promise<{ ok?: boolean; error?: string }> {
-  await requireAdmin();
+  await requireManager();
   const client = createAdminClient();
   const { error } = await client
     .from("visits")

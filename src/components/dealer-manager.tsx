@@ -1,16 +1,16 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { AssignmentEditor } from "@/components/assignment-editor";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DEBT_STATUS_LABELS, type DebtStatus } from "@/lib/enums";
-import { assignDealer, deleteCompany } from "@/app/(admin)/admin/bayiler/actions";
+import { deleteCompany } from "@/app/(admin)/admin/bayiler/actions";
 
 type Dealer = {
   id: string;
@@ -19,7 +19,8 @@ type Dealer = {
   segment: string | null;
   debt_status: string | null;
   city: string | null;
-  assignedTo: string | null;
+  owner: string | null;
+  backups: string[];
 };
 
 type SP = { id: string; full_name: string };
@@ -32,7 +33,6 @@ export function DealerManager({
   salespeople: SP[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [term, setTerm] = useState("");
 
   const filtered = useMemo(() => {
@@ -44,16 +44,6 @@ export function DealerManager({
         (d.logo_code ?? "").toLowerCase().includes(t)
     );
   }, [term, dealers]);
-
-  function reassign(companyId: string, salespersonId: string) {
-    startTransition(async () => {
-      await assignDealer({
-        companyId,
-        salespersonId: salespersonId || null,
-      });
-      router.refresh();
-    });
-  }
 
   async function remove(companyId: string) {
     const res = await deleteCompany({ companyId });
@@ -98,19 +88,13 @@ export function DealerManager({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Select
-                  value={d.assignedTo ?? ""}
-                  onChange={(e) => reassign(d.id, e.target.value)}
-                  disabled={pending}
-                  className="h-9 w-auto"
-                >
-                  <option value="">— Atanmamış —</option>
-                  {salespeople.map((sp) => (
-                    <option key={sp.id} value={sp.id}>
-                      {sp.full_name}
-                    </option>
-                  ))}
-                </Select>
+                <AssignmentEditor
+                  companyId={d.id}
+                  owner={d.owner}
+                  backups={d.backups}
+                  salespeople={salespeople}
+                  compact
+                />
                 <ConfirmButton
                   variant="ghost"
                   size="icon"

@@ -59,6 +59,34 @@ export async function ensurePlan(
   return { id: data.id };
 }
 
+/**
+ * A decided (approved/rejected) or submitted plan must go back to draft before
+ * it can change — the rep resubmits afterwards. Returns an error message when
+ * the reopen itself fails.
+ */
+async function reopenIfDecided(
+  supabase: ReturnType<typeof createClient>,
+  planId: string
+): Promise<string | null> {
+  const { data: p } = await supabase
+    .from("visit_plans")
+    .select("status")
+    .eq("id", planId)
+    .maybeSingle();
+  if (!p || p.status === "taslak") return null;
+  const { error } = await supabase
+    .from("visit_plans")
+    .update({
+      status: "taslak",
+      submitted_at: null,
+      approved_by: null,
+      decided_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", planId);
+  return error ? error.message : null;
+}
+
 /** Add a company to a plan (no-op upsert if already present). */
 export async function addPlanItem(input: {
   planId: string;
@@ -68,6 +96,8 @@ export async function addPlanItem(input: {
   note?: string | null;
 }): Promise<{ ok?: boolean; error?: string }> {
   const supabase = createClient();
+  const reopenErr = await reopenIfDecided(supabase, input.planId);
+  if (reopenErr) return { error: reopenErr };
   const { error } = await supabase
     .from("visit_plan_items")
     .upsert(
@@ -140,16 +170,25 @@ export async function savePlanNote(input: {
   return { ok: true };
 }
 
-/** Mark the plan submitted (locks editing until reopened). */
+/** Submit the plan for approval (locks editing until reopened). A fresh
+ *  submission clears any previous decision and manager note. */
 export async function submitPlan(
   planId: string
 ): Promise<{ ok?: boolean; error?: string }> {
   const supabase = createClient();
+  const { count } = await supabase
+    .from("visit_plan_items")
+    .select("id", { count: "exact", head: true })
+    .eq("plan_id", planId);
+  if (!count) return { error: "Boş plan gönderilemez — önce firma ekleyin." };
   const { error } = await supabase
     .from("visit_plans")
     .update({
       status: "gonderildi",
       submitted_at: new Date().toISOString(),
+      approved_by: null,
+      decided_at: null,
+      manager_note: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", planId);
@@ -159,7 +198,8 @@ export async function submitPlan(
   return { ok: true };
 }
 
-/** Reopen a submitted plan for further edits. */
+/** Reopen a submitted/decided plan for further edits. The manager's note is
+ *  kept so the rep still sees why it was rejected while fixing it. */
 export async function reopenPlan(
   planId: string
 ): Promise<{ ok?: boolean; error?: string }> {
@@ -169,6 +209,8 @@ export async function reopenPlan(
     .update({
       status: "taslak",
       submitted_at: null,
+      approved_by: null,
+      decided_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", planId);

@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PLAN_STATUS_LABELS, type PlanStatus } from "@/lib/enums";
+import { PLAN_STATUS_LABELS, PLAN_STATUS_BADGE, type PlanStatus } from "@/lib/enums";
 import { currentWeekStart, shiftWeek, weekRangeLabel } from "@/lib/week";
 import { getPlanDeadline } from "@/lib/settings";
 import { PlanWeekPicker } from "@/components/plan-week-picker";
@@ -36,8 +36,9 @@ export default async function PlansPage() {
   const byWeek = new Map(plans.map((p) => [p.week_start, p]));
 
   const thisWeek = currentWeekStart();
-  // This week + the next five — the weeks a rep can plan ahead for.
-  const upcoming = Array.from({ length: 6 }, (_, i) => shiftWeek(thisWeek, i)).map(
+  // This week + next week are the weeks a rep plans; further weeks only show
+  // up here if a plan already exists for them.
+  const upcoming = Array.from({ length: 2 }, (_, i) => shiftWeek(thisWeek, i)).map(
     (w) => {
       const p = byWeek.get(w);
       return {
@@ -50,6 +51,18 @@ export default async function PlansPage() {
       };
     }
   );
+
+  const nextWeek = shiftWeek(thisWeek, 1);
+  const future = plans
+    .filter((p) => p.week_start > nextWeek)
+    .map((p) => ({
+      weekStart: p.week_start,
+      label: weekRangeLabel(p.week_start),
+      isCurrent: false,
+      planId: p.id,
+      status: p.status,
+      count: p.visit_plan_items?.[0]?.count ?? 0,
+    }));
 
   const past = plans
     .filter((p) => p.week_start < thisWeek)
@@ -74,8 +87,8 @@ export default async function PlansPage() {
       <div>
         <h1 className="text-lg font-semibold">Ziyaret Planı</h1>
         <p className="text-sm text-muted-foreground">
-          Haftalık ziyaret planını oluştur, gönder; ilerideki haftalar için de
-          plan yapabilirsin.
+          Bu haftanın ve gelecek haftanın ziyaret planını oluştur, onaya gönder.
+          Yönetici onayladığında veya reddettiğinde burada görürsün.
         </p>
       </div>
 
@@ -93,10 +106,17 @@ export default async function PlansPage() {
       <section className="space-y-2">
         <h2 className="section-label flex items-center gap-2">
           <CalendarClock className="h-3.5 w-3.5" />
-          Bu hafta ve sonrası
+          Bu hafta ve gelecek hafta
         </h2>
         <PlanWeekPicker weeks={upcoming} />
       </section>
+
+      {future.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="section-label">İleri haftalar</h2>
+          <PlanWeekPicker weeks={future} />
+        </section>
+      )}
 
       {past.length > 0 && (
         <section className="space-y-2">
@@ -112,9 +132,7 @@ export default async function PlansPage() {
                         {p.count} firma
                       </div>
                     </div>
-                    <Badge
-                      variant={p.status === "gonderildi" ? "success" : "warning"}
-                    >
+                    <Badge variant={PLAN_STATUS_BADGE[p.status]}>
                       {PLAN_STATUS_LABELS[p.status]}
                     </Badge>
                   </CardContent>

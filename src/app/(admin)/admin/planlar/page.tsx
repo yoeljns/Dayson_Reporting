@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { weekRangeLabel } from "@/lib/week";
 import {
   PLAN_STATUS_LABELS,
+  PLAN_STATUS_BADGE,
   PLAN_STATUSES,
   type PlanStatus,
 } from "@/lib/enums";
@@ -28,9 +29,12 @@ export default async function ManagerPlansPage({
   await requireManager();
   const supabase = createClient();
 
-  const statusFilter = PLAN_STATUSES.includes(searchParams.status as PlanStatus)
-    ? (searchParams.status as PlanStatus)
-    : "gonderildi";
+  const statusFilter: PlanStatus | "" =
+    searchParams.status === "all"
+      ? ""
+      : PLAN_STATUSES.includes(searchParams.status as PlanStatus)
+        ? (searchParams.status as PlanStatus)
+        : "gonderildi";
 
   let query = supabase
     .from("visit_plans")
@@ -46,7 +50,10 @@ export default async function ManagerPlansPage({
   const rows = (data as Row[] | null) ?? [];
 
   const filters: Array<{ key: string; label: string }> = [
-    { key: "gonderildi", label: "Gönderilen" },
+    { key: "gonderildi", label: "Onay bekliyor" },
+    { key: "onaylandi", label: "Onaylandı" },
+    { key: "reddedildi", label: "Reddedildi" },
+    { key: "taslak", label: "Taslak" },
     { key: "all", label: "Tümü" },
   ];
   const active = statusFilter || "all";
@@ -54,17 +61,18 @@ export default async function ManagerPlansPage({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold">Haftalık Planlar</h1>
+        <h1 className="text-xl font-semibold">Plan Onayı</h1>
         <p className="text-sm text-muted-foreground">
-          Ekibin gönderdiği haftalık ziyaret planları.
+          Ekibin haftalık ziyaret planları. Onay bekleyen planı açıp onaylayın
+          veya notla reddedin.
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {filters.map((f) => (
           <Link
             key={f.key}
-            href={f.key === "all" ? "/admin/planlar?status=all" : `/admin/planlar?status=${f.key}`}
+            href={`/admin/planlar?status=${f.key}`}
             className={cn(
               "rounded-full border px-3 py-1 text-sm",
               active === f.key
@@ -98,9 +106,7 @@ export default async function ManagerPlansPage({
                         {weekRangeLabel(r.week_start)} · {count} firma
                       </div>
                     </div>
-                    <Badge
-                      variant={r.status === "gonderildi" ? "success" : "warning"}
-                    >
+                    <Badge variant={PLAN_STATUS_BADGE[r.status]}>
                       {PLAN_STATUS_LABELS[r.status]}
                     </Badge>
                   </CardContent>

@@ -7,7 +7,7 @@ import { VISIT_TYPE_LABELS, VISIT_STATUS_LABELS, type VisitType, type VisitStatu
 
 export default async function DeletedVisitsPage() {
   const profile = await requireManager();
-  const isAdmin = profile.role === "admin";
+  const isAdmin = profile.role === "admin" || profile.role === "manager";
   const supabase = createClient();
 
   const { data: visits } = await supabase

@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
-import { weekRangeLabel, weekDayOptions } from "@/lib/week";
+import { weekRangeLabel, weekDayOptions, currentWeekStart } from "@/lib/week";
+import { visitedInWeek } from "@/lib/plans/visited";
 import { PlanEditor } from "@/components/plan-editor";
 import type { PlanStatus } from "@/lib/enums";
 import type { VisitType } from "@/lib/enums";
@@ -27,7 +28,9 @@ export default async function PlanDetailPage({
 
   const { data: plan } = await supabase
     .from("visit_plans")
-    .select("id, salesperson_id, week_start, status, note, submitted_at")
+    .select(
+      "id, salesperson_id, week_start, status, note, submitted_at, manager_note"
+    )
     .eq("id", params.id)
     .single();
 
@@ -71,7 +74,14 @@ export default async function PlanDetailPage({
     );
   }
 
+  const visited = await visitedInWeek(supabase, {
+    salespersonId: plan.salesperson_id,
+    weekStart: plan.week_start,
+    companyIds,
+  });
+
   const isOwner = plan.salesperson_id === profile.id;
+  const pastWeek = plan.week_start < currentWeekStart();
 
   return (
     <div className="mx-auto max-w-md space-y-4">
@@ -91,10 +101,15 @@ export default async function PlanDetailPage({
         planId={plan.id}
         status={plan.status as PlanStatus}
         note={plan.note}
+        managerNote={plan.manager_note}
         dayOptions={weekDayOptions(plan.week_start)}
         items={items}
         lastVisit={lastVisit}
+        visited={visited}
         readOnly={!isOwner}
+        lockedReason={
+          pastWeek ? "Geçmiş haftaların planı değiştirilemez." : null
+        }
       />
     </div>
   );

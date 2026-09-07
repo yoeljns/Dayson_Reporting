@@ -3,7 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { todayIso } from "@/lib/week";
-import type { VisitType, SupplyKind } from "@/lib/enums";
+import {
+  FIELD_REGISTRABLE_KINDS,
+  type VisitType,
+  type SupplyKind,
+  type CompanyKind,
+} from "@/lib/enums";
+import type { QuestionWithOptions } from "@/types/db";
+import {
+  applicableQuestions,
+  missingRequired,
+  conditionalSkip,
+} from "@/lib/visit-questions";
 
 /** True when `s` is a REAL calendar date (YYYY-MM-DD) on or before `today`.
  *  The regex alone would accept impossible dates like 2026-02-30, which then
@@ -17,35 +28,59 @@ function isValidVisitDate(s: string, today: string): boolean {
   return s <= today;
 }
 
-/** Create a non-customer company on the fly. Returns the new company id. */
+/**
+ * Register a company from the field (potansiyel bayi / alt bayi / rakip
+ * noktası). The RPC creates the row AND assigns the caller in one transaction,
+ * so the rep immediately sees the firm in their list. `clientId` makes offline
+ * replays idempotent.
+ */
+export async function registerCompanyFromField(input: {
+  kind: CompanyKind;
+  name: string;
+  city?: string | null;
+  plateCode?: string | null;
+  phone?: string | null;
+  buysFromCompanyId?: string | null;
+  notes?: string | null;
+  clientId?: string | null;
+}): Promise<{ id?: string; error?: string }> {
+  const name = input.name.trim();
+  if (!name) return { error: "Firma adı zorunludur." };
+  if (!(FIELD_REGISTRABLE_KINDS as readonly string[]).includes(input.kind))
+    return { error: "Bu firma türü sahadan kaydedilemez." };
+  const plate = (input.plateCode ?? "").trim();
+  if (plate && !/^[0-9]{2}$/.test(plate))
+    return { error: "Plaka kodu 2 haneli olmalı (örn. 34)." };
+
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("register_company_from_field", {
+    p_kind: input.kind,
+    p_name: name,
+    p_city: input.city?.trim() || null,
+    p_plate_code: plate || null,
+    p_phone: input.phone?.trim() || null,
+    p_buys_from_company_id: input.buysFromCompanyId || null,
+    p_notes: input.notes?.trim() || null,
+    p_id: input.clientId || null,
+  });
+  if (error) return { error: error.message };
+  revalidatePath("/firmalar");
+  revalidatePath("/son-ziyaretler");
+  return { id: data as string };
+}
+
+/** Legacy name kept for older call sites — registers a potansiyel bayi. */
 export async function createNonCustomerCompany(input: {
   name: string;
   city?: string;
   phone?: string;
 }): Promise<{ id?: string; error?: string }> {
-  const name = input.name.trim();
-  if (!name) return { error: "Firma adı zorunludur." };
-
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Oturum bulunamadı." };
-
-  const { data, error } = await supabase
-    .from("companies")
-    .insert({
-      kind: "non_customer",
-      name,
-      city: input.city?.trim() || null,
-      phone: input.phone?.trim() || null,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
-
-  if (error) return { error: error.message };
-  return { id: data.id };
+  return registerCompanyFromField({
+    kind: "non_customer",
+    name: input.name,
+    city: input.city ?? null,
+    phone: input.phone ?? null,
+  });
 }
 
 /** Create a draft visit after just company + visit type are chosen.
@@ -55,6 +90,8 @@ export async function createDraftVisit(input: {
   companyId: string;
   visitType: VisitType;
   visitDate?: string;
+  /** Client-generated uuid so an offline replay never creates the visit twice. */
+  id?: string;
 }): Promise<{ id?: string; error?: string }> {
   const supabase = createClient();
   const {
@@ -72,6 +109,7 @@ export async function createDraftVisit(input: {
   const { data, error } = await supabase
     .from("visits")
     .insert({
+      ...(input.id ? { id: input.id } : {}),
       company_id: input.companyId,
       salesperson_id: user.id,
       visit_type: input.visitType,
@@ -81,12 +119,24 @@ export async function createDraftVisit(input: {
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) {
+    // Replayed from the offline queue: the row already exists → success.
+    if (error.code === "23505" && input.id) {
+      const { data: again } = await supabase
+        .from("visits")
+        .select("id")
+        .eq("id", input.id)
+        .maybeSingle();
+      if (again) return { id: again.id };
+    }
+    return { error: error.message };
+  }
   revalidatePath("/");
   return { id: data.id };
 }
 
-/** Soft-delete a visit (archive). Kept on record + visible to managers. */
+/** Soft-delete one's own visit (any status). Kept on record; the office can
+ *  restore it from "Silinen ziyaretler". */
 export async function deleteVisit(
   visitId: string
 ): Promise<{ ok?: boolean; error?: string }> {
@@ -95,6 +145,15 @@ export async function deleteVisit(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
+
+  const { data: v } = await supabase
+    .from("visits")
+    .select("salesperson_id")
+    .eq("id", visitId)
+    .maybeSingle();
+  if (!v) return { error: "Ziyaret bulunamadı." };
+  if (v.salesperson_id !== user.id)
+    return { error: "Yalnızca kendi ziyaretinizi silebilirsiniz." };
 
   const { error } = await supabase
     .from("visits")
@@ -271,6 +330,55 @@ export async function saveVisit(input: {
   complete: boolean;
 }): Promise<{ ok?: boolean; error?: string }> {
   const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+
+  // Ownership + state: only the author writes, and only drafts (or a
+  // re-edited completed visit of their own) — never someone else's record.
+  const { data: visit } = await supabase
+    .from("visits")
+    .select("salesperson_id, visit_type, deleted_at, companies(kind)")
+    .eq("id", input.visitId)
+    .maybeSingle();
+  if (!visit) return { error: "Ziyaret bulunamadı." };
+  if (visit.salesperson_id !== user.id)
+    return { error: "Bu ziyaret size ait değil." };
+  if (visit.deleted_at) return { error: "Silinmiş ziyaret düzenlenemez." };
+
+  if (input.complete) {
+    // Server-side required check with the SAME rules as the wizard, so a
+    // direct call cannot complete a visit with missing mandatory answers.
+    const { data: qs } = await supabase
+      .from("questions")
+      .select("*, question_options(*)")
+      .eq("is_active", true)
+      .order("sort_order");
+    const companyKind = (
+      Array.isArray(visit.companies) ? visit.companies[0] : visit.companies
+    ) as { kind: CompanyKind } | null;
+    const applicable = applicableQuestions(
+      (qs as QuestionWithOptions[] | null) ?? [],
+      visit.visit_type as VisitType,
+      companyKind?.kind ?? null
+    );
+    const values: Record<string, string | number | null> = {};
+    const details: Record<string, string | null> = {};
+    for (const a of input.answers) {
+      values[a.questionId] =
+        a.valueText ?? (a.valueNumber == null ? null : a.valueNumber) ?? a.valueDate ?? null;
+      details[a.questionId] = a.valueDetail ?? null;
+    }
+    const byCode = new Map(applicable.map((q) => [q.code, q]));
+    const missing = missingRequired(
+      applicable,
+      values,
+      details,
+      conditionalSkip(byCode, values)
+    );
+    if (missing) return { error: `"${missing.label_tr}" alanı zorunludur.` };
+  }
 
   // Atomic delete+insert via RPC so a failed insert never wipes prior answers.
   const rows = input.answers

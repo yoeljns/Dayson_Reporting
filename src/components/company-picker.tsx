@@ -1,18 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { X, Plus } from "lucide-react";
 import { CompanySearch } from "@/components/company-search";
+import { CompanyRegisterForm } from "@/components/company-register-form";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   COMPANY_KINDS,
   COMPANY_KIND_LABELS,
+  FIELD_REGISTRABLE_KINDS,
   type CompanyKind,
 } from "@/lib/enums";
 import { cn } from "@/lib/utils";
-import { createNonCustomerCompany } from "@/app/(app)/ziyaret/actions";
 
 export type PickedCompany = { id: string; name: string };
 
@@ -27,32 +26,12 @@ export function CompanyPicker({
   onChange: (c: PickedCompany | null) => void;
   /** Require N chars before searching (avoids dumping the whole list). */
   minChars?: number;
-  /** Allow adding a new non-customer company on the fly. */
+  /** Allow registering a new (non-dealer) company on the fly. */
   allowCreate?: boolean;
 }) {
   const [kind, setKind] = useState<CompanyKind>("distributor");
   const [showNew, setShowNew] = useState(false);
-  const [name, setName] = useState("");
-  const [city, setCity] = useState("");
-  const [phone, setPhone] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function create() {
-    setError(null);
-    startTransition(async () => {
-      const res = await createNonCustomerCompany({ name, city, phone });
-      if (res.error || !res.id) {
-        setError(res.error ?? "Firma oluşturulamadı.");
-        return;
-      }
-      onChange({ id: res.id, name: name.trim() });
-      setShowNew(false);
-      setName("");
-      setCity("");
-      setPhone("");
-    });
-  }
+  const canRegister = (FIELD_REGISTRABLE_KINDS as readonly string[]).includes(kind);
 
   if (value) {
     return (
@@ -72,7 +51,7 @@ export function CompanyPicker({
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {COMPANY_KINDS.map((k) => (
           <button
             key={k}
@@ -82,7 +61,7 @@ export function CompanyPicker({
               setShowNew(false);
             }}
             className={cn(
-              "flex-1 rounded-md border px-3 py-1.5 text-sm font-medium",
+              "rounded-md border px-3 py-1.5 text-sm font-medium",
               kind === k
                 ? "border-primary bg-primary text-primary-foreground"
                 : "hover:bg-accent"
@@ -94,47 +73,17 @@ export function CompanyPicker({
       </div>
 
       {showNew ? (
-        <div className="space-y-2 rounded-md border p-3">
-          <div className="space-y-1">
-            <Label htmlFor="cp-name">Firma adı *</Label>
-            <Input
-              id="cp-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              placeholder="Şehir"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-            />
-            <Input
-              placeholder="Telefon"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => setShowNew(false)}
-            >
-              Vazgeç
-            </Button>
-            <Button
-              type="button"
-              className="flex-1"
-              disabled={pending || !name.trim()}
-              onClick={create}
-            >
-              Kaydet
-            </Button>
-          </div>
+        <div className="rounded-md border p-3">
+          <CompanyRegisterForm
+            initialKind={kind}
+            lockKind
+            submitLabel="Kaydet"
+            onCancel={() => setShowNew(false)}
+            onCreated={(c) => {
+              onChange({ id: c.id, name: c.name });
+              setShowNew(false);
+            }}
+          />
         </div>
       ) : (
         <>
@@ -143,14 +92,15 @@ export function CompanyPicker({
             minChars={minChars}
             onSelect={(c) => onChange({ id: c.id, name: c.name })}
           />
-          {allowCreate && kind === "non_customer" && (
+          {allowCreate && canRegister && (
             <Button
               type="button"
               variant="secondary"
               className="w-full"
               onClick={() => setShowNew(true)}
             >
-              <Plus className="mr-1 h-4 w-4" /> Yeni firma ekle
+              <Plus className="mr-1 h-4 w-4" /> Yeni{" "}
+              {COMPANY_KIND_LABELS[kind].toLocaleLowerCase("tr")} ekle
             </Button>
           )}
         </>

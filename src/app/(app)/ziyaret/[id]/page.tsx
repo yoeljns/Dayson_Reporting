@@ -20,6 +20,9 @@ import {
   type ComplaintType,
 } from "@/lib/enums";
 import type { QuestionWithOptions, VisitAnswer, CompanyContact } from "@/types/db";
+import type { CompanyKind, VisitType } from "@/lib/enums";
+import { applicableQuestions } from "@/lib/visit-questions";
+import { visitCode } from "@/lib/codes";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -48,13 +51,14 @@ export default async function VisitDetailPage({
     .single();
 
   if (!visit) notFound();
+  const isOwner = visit.salesperson_id === profile.id;
 
   const company = Array.isArray(visit.companies)
     ? visit.companies[0]
     : (visit.companies as {
         id: string;
         name: string;
-        kind: "distributor" | "non_customer";
+        kind: CompanyKind;
         city: string | null;
         segment: string | null;
         debt_status: string | null;
@@ -125,18 +129,13 @@ export default async function VisitDetailPage({
   ]);
 
   const allQuestions = (questions as QuestionWithOptions[]) ?? [];
-  // The wizard only offers questions that are active AND apply to this visit.
-  const applicable = allQuestions.filter((q) => {
-    if (!q.is_active) return false;
-    if (q.applies_to && !q.applies_to.includes(visit.visit_type)) return false;
-    if (
-      q.applies_to_kind &&
-      company &&
-      !q.applies_to_kind.includes(company.kind)
-    )
-      return false;
-    return true;
-  });
+  // The wizard only offers questions that are active AND apply to this visit
+  // (same helper the server uses to validate a completion).
+  const applicable = applicableQuestions(
+    allQuestions,
+    visit.visit_type as VisitType,
+    company?.kind ?? null
+  );
 
   // Build product-matrix options: brands per active category (global ∪ this rep),
   // own brands first.
@@ -181,7 +180,6 @@ export default async function VisitDetailPage({
   );
 
   const linkParams = `company=${company?.id}&visit=${visit.id}`;
-  const isOwner = visit.salesperson_id === profile.id;
 
   // Anyone but the author reads the visit instead of stepping through the
   // wizard: the whole record on one page, and no way to alter someone
@@ -223,6 +221,7 @@ export default async function VisitDetailPage({
         <div>
           <h1 className="text-lg font-semibold">{company?.name}</h1>
           <p className="text-sm text-muted-foreground">
+            <span className="font-mono">{visitCode(visit.id)}</span> ·{" "}
             {VISIT_TYPE_LABELS[visit.visit_type as keyof typeof VISIT_TYPE_LABELS]}{" "}
             · {visit.visit_date} ·{" "}
             {company
@@ -234,8 +233,11 @@ export default async function VisitDetailPage({
           <Badge variant={visit.status === "taslak" ? "warning" : "success"}>
             {VISIT_STATUS_LABELS[visit.status as keyof typeof VISIT_STATUS_LABELS]}
           </Badge>
-          {visit.status === "taslak" && (
-            <DeleteVisitButton visitId={visit.id} />
+          {isOwner && (
+            <DeleteVisitButton
+              visitId={visit.id}
+              completed={visit.status === "tamamlandi"}
+            />
           )}
         </div>
       </div>
@@ -277,7 +279,8 @@ export default async function VisitDetailPage({
         visitId={visit.id}
         isOwner={isOwner}
         companyId={company?.id ?? ""}
-        companyKind={(company?.kind ?? "distributor") as "distributor" | "non_customer"}
+        companyKind={(company?.kind ?? "distributor") as CompanyKind}
+        visitType={visit.visit_type as VisitType}
         questions={applicable}
         existingAnswers={(answers as VisitAnswer[]) ?? []}
         categories={categoryOptions}

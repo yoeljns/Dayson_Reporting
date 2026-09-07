@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -11,6 +11,8 @@ import {
   UserPlus,
   AlertTriangle,
   Swords,
+  Boxes,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,13 +20,21 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { visitCode } from "@/lib/codes";
+import {
+  answerIsComplete,
+  missingRequired,
+  conditionalSkip,
+} from "@/lib/visit-questions";
 import {
   CONTACT_ROLES,
   CONTACT_ROLE_LABELS,
   SUPPLY_KIND_LABELS,
   type CompanyKind,
   type ContactRole,
+  type VisitType,
 } from "@/lib/enums";
 import type { QuestionWithOptions, VisitAnswer, CompanyContact } from "@/types/db";
 import {
@@ -43,23 +53,19 @@ type StepDef =
   | { kind: "addons" }
   | { kind: "question"; q: QuestionWithOptions }
   | { kind: "contact" }
-  | { kind: "products" }
-  | { kind: "order" };
+  | { kind: "products" };
 
-const HANDLED_CODES = new Set([
-  "ziyaret_amaci",
-  "hiz_veren_bayi",
-  "siparis_alindi",
-  "siparis_alinmama_nedeni",
-  "serbest_not",
-  "gorusulen_kisi_rolu",
-]);
+/** Codes that get a dedicated step; everything else renders as an extra question. */
+const HANDLED_CODES = new Set(["ziyaret_amaci", "hiz_veren_bayi", "serbest_not"]);
+/** Kinds where "hizmet veren bayi" (who supplies this point) makes sense. */
+const SERVICED_KINDS: CompanyKind[] = ["sub_dealer", "non_customer"];
 
 export function VisitWizard({
   visitId,
   isOwner,
   companyId,
   companyKind,
+  visitType,
   questions,
   existingAnswers,
   categories,
@@ -67,11 +73,14 @@ export function VisitWizard({
   contacts,
   currentContactId,
   initialCompleted,
+  addonSurveys = [],
+  extraSlot,
 }: {
   visitId: string;
   isOwner: boolean;
   companyId: string;
   companyKind: CompanyKind;
+  visitType: VisitType;
   questions: QuestionWithOptions[];
   existingAnswers: VisitAnswer[];
   categories: CategoryOption[];
@@ -83,15 +92,42 @@ export function VisitWizard({
   contacts: CompanyContact[];
   currentContactId: string | null;
   initialCompleted: boolean;
+  /** Surveys that target this company — offered as add-ons. */
+  addonSurveys?: { id: string; name: string }[];
+  /** Rendered inside the notes step (e.g. the photo uploader). */
+  extraSlot?: React.ReactNode;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [autosaveWarn, setAutosaveWarn] = useState(false);
   // Guards the warning against out-of-order autosave results: only the most
   // recently started save may set/clear it.
   const autosaveSeq = useRef(0);
+  const stepKey = `visit-step:${visitId}`;
   const [step, setStep] = useState(0);
+
+  // Resume where the rep left off (drafts only) — the step index lives on the
+  // device, never in the DB.
+  useEffect(() => {
+    if (!isOwner || initialCompleted) return;
+    try {
+      const saved = Number(localStorage.getItem(stepKey));
+      if (Number.isFinite(saved) && saved > 0) setStep(saved);
+    } catch {
+      /* storage unavailable */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!isOwner || initialCompleted) return;
+    try {
+      localStorage.setItem(stepKey, String(step));
+    } catch {
+      /* ignore */
+    }
+  }, [step, stepKey, isOwner, initialCompleted]);
 
   const byCode = useMemo(() => {
     const m = new Map<string, QuestionWithOptions>();
@@ -147,27 +183,52 @@ export function VisitWizard({
   });
   const [customName, setCustomName] = useState<Record<string, string>>({});
 
+  const skipConditional = useMemo(
+    () => conditionalSkip(byCode, values),
+    [byCode, values]
+  );
+
+  // Step order (spec K1): ekle → amaç → kişi → ürünler (yalnız yüz yüze) →
+  // hizmet veren bayi (alt bayi / potansiyel) → ek sorular → not.
   const steps = useMemo<StepDef[]>(() => {
     const out: StepDef[] = [];
     out.push({ kind: "addons" });
     const amac = byCode.get("ziyaret_amaci");
     if (amac) out.push({ kind: "question", q: amac });
     out.push({ kind: "contact" });
-    if (catOptions.length > 0) out.push({ kind: "products" });
+    if (visitType === "yuz_yuze" && catOptions.length > 0)
+      out.push({ kind: "products" });
     const hiz = byCode.get("hiz_veren_bayi");
-    if (hiz) out.push({ kind: "question", q: hiz });
-    // Any extra admin-added questions not otherwise handled.
-    for (const q of questions)
-      if (!HANDLED_CODES.has(q.code)) out.push({ kind: "question", q });
-    if (byCode.get("siparis_alindi")) out.push({ kind: "order" });
+    if (hiz && SERVICED_KINDS.includes(companyKind))
+      out.push({ kind: "question", q: hiz });
+    for (const q of questions) {
+      if (HANDLED_CODES.has(q.code)) continue;
+      if (skipConditional(q)) continue;
+      out.push({ kind: "question", q });
+    }
     const notes = byCode.get("serbest_not");
     if (notes) out.push({ kind: "question", q: notes });
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [byCode, catOptions.length, questions]);
+  }, [byCode, catOptions.length, questions, visitType, companyKind, skipConditional]);
 
   const total = steps.length;
+  // A conditional question can vanish mid-flow — never point past the end.
+  useEffect(() => {
+    if (step > total - 1) setStep(Math.max(0, total - 1));
+  }, [step, total]);
   const current = steps[Math.min(step, total - 1)];
+
+  const contactRequired = byCode.get("gorusulen_kisi_rolu")?.is_required ?? false;
+
+  /** Whether the CURRENT step allows moving on ("Devam" stays disabled). */
+  function stepValid(s: StepDef | undefined): boolean {
+    if (!s) return true;
+    if (s.kind === "question")
+      return !s.q.is_required || answerIsComplete(s.q, values[s.q.id], details[s.q.id]);
+    if (s.kind === "contact") return !contactRequired || contactId != null;
+    return true;
+  }
+  const currentValid = stepValid(current);
 
   function toggleBrand(catId: string, brandId: string) {
     setProductSel((p) => {
@@ -257,7 +318,10 @@ export function VisitWizard({
         return { questionId: q.id, valueNumber: raw === "" ? null : Number(raw) };
       if (q.input_type === "date")
         return { questionId: q.id, valueDate: raw === "" ? null : raw };
-      const detail = raw === "diger" ? (details[q.id]?.trim() || null) : null;
+      const detail =
+        raw.split(",").map((s) => s.trim()).includes("diger")
+          ? details[q.id]?.trim() || null
+          : null;
       return {
         questionId: q.id,
         valueText: raw === "" ? null : raw,
@@ -284,24 +348,19 @@ export function VisitWizard({
   function persist(complete: boolean) {
     setError(null);
     if (complete) {
-      // Only require questions actually shown in the wizard.
-      const rendered = new Set<string>();
-      for (const s of steps) if (s.kind === "question") rendered.add(s.q.id);
-      const hasOrder = steps.some((s) => s.kind === "order");
-      const sip = byCode.get("siparis_alindi");
-      if (sip && hasOrder) rendered.add(sip.id);
-      // The "sipariş alınmama nedeni" field only renders when order = Hayır.
-      const neden = byCode.get("siparis_alinmama_nedeni");
-      if (neden && hasOrder && sip && (values[sip.id] ?? "") === "hayir")
-        rendered.add(neden.id);
-      const missing = questions.find(
-        (q) =>
-          q.is_required &&
-          rendered.has(q.id) &&
-          !(values[q.id] ?? "").toString().trim()
-      );
+      // Same rules as the server: every rendered required question must be
+      // complete. Jump back to the first gap instead of failing silently.
+      const rendered = steps.flatMap((s) => (s.kind === "question" ? [s.q] : []));
+      const missing = missingRequired(rendered, values, details, skipConditional);
       if (missing) {
-        setError(`"${missing.label_tr}" alanı zorunludur.`);
+        const idx = steps.findIndex((s) => s.kind === "question" && s.q.id === missing.id);
+        if (idx >= 0) setStep(idx);
+        setError(`"${missing.label_tr}" alanı zorunludur — devam etmek için bu adımı doldur.`);
+        return;
+      }
+      if (contactRequired && contactId == null) {
+        setStep(steps.findIndex((s) => s.kind === "contact"));
+        setError("Görüşülen kişi zorunludur.");
         return;
       }
     }
@@ -311,9 +370,17 @@ export function VisitWizard({
       autosaveSeq.current++; // a stale in-flight autosave may not re-warn
       setAutosaveWarn(false);
       if (complete) {
-        router.push("/");
+        try {
+          localStorage.removeItem(stepKey);
+        } catch {
+          /* ignore */
+        }
+        const code = visitCode(visitId);
+        toast(`Ziyaret tamamlandı · ${code}`);
+        router.push(`/?done=${code}`);
         router.refresh();
       } else {
+        toast("Taslak kaydedildi", "info");
         router.refresh();
       }
     });
@@ -347,6 +414,11 @@ export function VisitWizard({
    *  autosaved: saveVisit(false) would demote them to draft and wipe
    *  completed_at just for paging through. */
   function goNext() {
+    if (!currentValid) {
+      setError("Devam etmek için bu adımı doldur.");
+      return;
+    }
+    setError(null);
     setStep((s) => Math.min(total - 1, s + 1));
     if (!isOwner || initialCompleted) return;
     const seq = ++autosaveSeq.current;
@@ -356,6 +428,9 @@ export function VisitWizard({
   }
 
   const isLast = step >= total - 1;
+  const addonQuery = `company=${companyId}&visit=${visitId}&return=${encodeURIComponent(
+    `/ziyaret/${visitId}`
+  )}`;
 
   return (
     <div className="space-y-4">
@@ -379,23 +454,41 @@ export function VisitWizard({
         <CardContent className="space-y-4 p-4">
           {current?.kind === "addons" && (
             <div className="space-y-3">
-              <Label>Bu ziyarete eklemek ister misin?</Label>
+              <Label>Bu ziyarete rapor eklemek ister misin?</Label>
               <p className="text-xs text-muted-foreground">
-                İstersen şimdi ekle; rapor boyunca en altta da ekleyebilirsin.
+                İstersen şimdi ekle; ziyaretin sonunda da ekleyebilirsin.
               </p>
               <div className="grid grid-cols-2 gap-3">
-                <Link href={`/sikayet/yeni?company=${companyId}&visit=${visitId}`}>
-                  <Button variant="outline" className="h-16 w-full flex-col gap-1">
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
-                    Şikayet ekle
-                  </Button>
-                </Link>
-                <Link href={`/rakip/yeni?company=${companyId}&visit=${visitId}`}>
+                {companyKind === "distributor" && (
+                  <Link href={`/sikayet/yeni?${addonQuery}`}>
+                    <Button variant="outline" className="h-16 w-full flex-col gap-1">
+                      <AlertTriangle className="h-5 w-5 text-amber-600" />
+                      Şikayet ekle
+                    </Button>
+                  </Link>
+                )}
+                <Link href={`/rakip/yeni?${addonQuery}`}>
                   <Button variant="outline" className="h-16 w-full flex-col gap-1">
                     <Swords className="h-5 w-5 text-primary" />
                     Rakip bilgisi
                   </Button>
                 </Link>
+                {companyKind === "distributor" && (
+                  <Link href={`/stok/yeni?${addonQuery}`}>
+                    <Button variant="outline" className="h-16 w-full flex-col gap-1">
+                      <Boxes className="h-5 w-5 text-primary" />
+                      Stok durumu
+                    </Button>
+                  </Link>
+                )}
+                {addonSurveys.map((s) => (
+                  <Link key={s.id} href={`/anket/${s.id}?${addonQuery}`}>
+                    <Button variant="outline" className="h-16 w-full flex-col gap-1">
+                      <ClipboardList className="h-5 w-5 text-primary" />
+                      <span className="line-clamp-2 text-xs">Özel rapor · {s.name}</span>
+                    </Button>
+                  </Link>
+                ))}
               </div>
             </div>
           )}
@@ -407,12 +500,16 @@ export function VisitWizard({
               onChange={(v) => setVal(current.q.id, v)}
               detail={details[current.q.id] ?? ""}
               onDetailChange={(v) => setDetail(current.q.id, v)}
+              extra={current.q.code === "serbest_not" ? extraSlot : undefined}
             />
           )}
 
           {current?.kind === "contact" && (
             <div className="space-y-3">
-              <Label>Görüşülen kişi</Label>
+              <Label>
+                Görüşülen kişi
+                {contactRequired && <span className="text-destructive"> *</span>}
+              </Label>
               {contactList.length > 0 && (
                 <div className="space-y-2">
                   {contactList.map((c) => (
@@ -450,6 +547,9 @@ export function VisitWizard({
                   ))}
                 </div>
               )}
+              {contactList.length === 0 && (
+                <p className="text-sm text-muted-foreground">Kayıtlı kişi yok.</p>
+              )}
 
               <div className="rounded-md border p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -472,7 +572,7 @@ export function VisitWizard({
                     value={newRole}
                     onChange={(e) => setNewRole(e.target.value)}
                   >
-                    <option value="">Rol (opsiyonel)</option>
+                    <option value="">Görevi (opsiyonel)</option>
                     {CONTACT_ROLES.map((r) => (
                       <option key={r} value={r}>
                         {CONTACT_ROLE_LABELS[r]}
@@ -513,7 +613,9 @@ export function VisitWizard({
                               "rounded-full border px-3 py-1 text-sm",
                               on
                                 ? "border-primary bg-primary text-primary-foreground"
-                                : "hover:bg-accent"
+                                : b.isOwn
+                                  ? "border-primary/40 text-primary hover:bg-accent"
+                                  : "hover:bg-accent"
                             )}
                           >
                             {b.name}
@@ -565,71 +667,6 @@ export function VisitWizard({
             </div>
           )}
 
-          {current?.kind === "order" && (
-            <div className="space-y-3">
-              {(() => {
-                const sip = byCode.get("siparis_alindi");
-                const neden = byCode.get("siparis_alinmama_nedeni");
-                if (!sip) return null;
-                const sipVal = values[sip.id] ?? "";
-                return (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label>{sip.label_tr}</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { v: "evet", l: "Evet" },
-                          { v: "hayir", l: "Hayır" },
-                        ].map((o) => (
-                          <button
-                            key={o.v}
-                            type="button"
-                            onClick={() =>
-                              setVal(sip.id, sipVal === o.v ? "" : o.v)
-                            }
-                            className={cn(
-                              "rounded-md border px-3 py-3 text-sm font-medium",
-                              sipVal === o.v
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "hover:bg-accent"
-                            )}
-                          >
-                            {o.l}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {neden && sipVal === "hayir" && (
-                      <div className="space-y-1.5">
-                        <Label>{neden.label_tr}</Label>
-                        <Select
-                          value={values[neden.id] ?? ""}
-                          onChange={(e) => setVal(neden.id, e.target.value)}
-                        >
-                          <option value="">Seçiniz…</option>
-                          {[...neden.question_options]
-                            .sort((a, b) => a.sort_order - b.sort_order)
-                            .map((o) => (
-                              <option key={o.id} value={o.value}>
-                                {o.label_tr}
-                              </option>
-                            ))}
-                        </Select>
-                        {(values[neden.id] ?? "") === "diger" && (
-                          <Input
-                            placeholder="Detay yazın…"
-                            value={details[neden.id] ?? ""}
-                            onChange={(e) => setDetail(neden.id, e.target.value)}
-                          />
-                        )}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
@@ -677,11 +714,21 @@ export function VisitWizard({
             </Button>
           )
         ) : (
-          <Button className="ml-auto" disabled={pending} onClick={goNext}>
+          <Button
+            className="ml-auto"
+            disabled={pending || !currentValid}
+            title={currentValid ? undefined : "Devam etmek için bu adımı doldur"}
+            onClick={goNext}
+          >
             İleri <ArrowRight className="ml-1 h-4 w-4" />
           </Button>
         )}
       </div>
+      {!currentValid && !error && (
+        <p className="text-xs text-muted-foreground">
+          Devam etmek için bu adımı doldur.
+        </p>
+      )}
     </div>
   );
 }
@@ -692,15 +739,30 @@ function QuestionStep({
   onChange,
   detail,
   onDetailChange,
+  extra,
 }: {
   q: QuestionWithOptions;
   value: string;
   onChange: (v: string) => void;
   detail: string;
   onDetailChange: (v: string) => void;
+  extra?: React.ReactNode;
 }) {
   const isSelect =
     q.input_type === "select" || q.input_type === "multiselect";
+  const isMulti = q.input_type === "multiselect";
+  const picks = value ? value.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const hasDiger = picks.includes("diger");
+
+  function toggleOption(v: string) {
+    if (!isMulti) {
+      onChange(value === v ? "" : v);
+      return;
+    }
+    const next = picks.includes(v) ? picks.filter((p) => p !== v) : [...picks, v];
+    onChange(next.join(","));
+  }
+
   return (
     <div className="space-y-1.5">
       <Label htmlFor={q.id}>
@@ -729,25 +791,28 @@ function QuestionStep({
           ))}
         </div>
       )}
-      {(q.input_type === "select" || q.input_type === "multiselect") && (
+      {isSelect && (
         <div className="flex flex-wrap gap-2">
           {[...q.question_options]
             .sort((a, b) => a.sort_order - b.sort_order)
-            .map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => onChange(value === o.value ? "" : o.value)}
-                className={cn(
-                  "rounded-full border px-4 py-2 text-sm",
-                  value === o.value
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "hover:bg-accent"
-                )}
-              >
-                {o.label_tr}
-              </button>
-            ))}
+            .map((o) => {
+              const on = picks.includes(o.value);
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => toggleOption(o.value)}
+                  className={cn(
+                    "rounded-full border px-4 py-2 text-sm",
+                    on
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:bg-accent"
+                  )}
+                >
+                  {o.label_tr}
+                </button>
+              );
+            })}
         </div>
       )}
       {q.input_type === "number" && (
@@ -768,15 +833,33 @@ function QuestionStep({
         />
       )}
       {q.input_type === "text" && (
-        <Textarea id={q.id} value={value} onChange={(e) => onChange(e.target.value)} />
-      )}
-      {isSelect && value === "diger" && (
-        <Input
-          placeholder="Detay yazın…"
-          value={detail}
-          onChange={(e) => onDetailChange(e.target.value)}
+        <Textarea
+          id={q.id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={q.code === "serbest_not" ? 5 : 3}
+          placeholder={
+            q.code === "serbest_not"
+              ? "Görüşme özeti, sözler, dikkat edilecekler"
+              : undefined
+          }
         />
       )}
+      {isSelect && hasDiger && (
+        <div className="space-y-1">
+          <Input
+            placeholder="Açıklama yazın… *"
+            value={detail}
+            onChange={(e) => onDetailChange(e.target.value)}
+          />
+          {!detail.trim() && (
+            <p className="text-xs text-muted-foreground">
+              &quot;Diğer&quot; seçildiğinde açıklama zorunludur.
+            </p>
+          )}
+        </div>
+      )}
+      {extra}
     </div>
   );
 }

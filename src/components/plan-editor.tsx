@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Send, Unlock, Building2, X } from "lucide-react";
+import { Plus, Trash2, Send, Unlock, Building2, X, CheckCircle2 } from "lucide-react";
 import { CompanySearch } from "@/components/company-search";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmButton } from "@/components/confirm-button";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { planItemDone } from "@/lib/plans/visited";
 import { formatTRDate } from "@/lib/week";
 import {
   COMPANY_KINDS,
@@ -18,6 +20,7 @@ import {
   VISIT_TYPES,
   VISIT_TYPE_LABELS,
   PLAN_STATUS_LABELS,
+  PLAN_STATUS_BADGE,
   type CompanyKind,
   type PlanStatus,
   type VisitType,
@@ -45,29 +48,43 @@ export function PlanEditor({
   planId,
   status,
   note,
+  managerNote,
   dayOptions,
   items,
   lastVisit,
+  visited = {},
   readOnly,
+  lockedReason,
 }: {
   planId: string;
   status: PlanStatus;
   note: string | null;
+  /** Manager's approval / rejection note. */
+  managerNote?: string | null;
   dayOptions: { iso: string; label: string }[];
   items: Item[];
   lastVisit: Record<string, string | null>;
+  /** Completed visit dates in this week, by company id (strike-through). */
+  visited?: Record<string, string[]>;
   readOnly: boolean;
+  /** Shown instead of the submit/reopen controls when the week is closed. */
+  lockedReason?: string | null;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState(false);
   const [kind, setKind] = useState<CompanyKind>("distributor");
   const [error, setError] = useState<string | null>(null);
 
-  const submitted = status === "gonderildi";
-  const editable = !readOnly && !submitted;
+  // Anything past draft is locked until the rep reopens it.
+  const submitted = status !== "taslak";
+  const editable = !readOnly && !submitted && !lockedReason;
+  const doneCount = items.filter((it) =>
+    planItemDone(it.plannedDate, visited[it.companyId])
+  ).length;
 
-  function run(fn: () => Promise<{ error?: string }>) {
+  function run(fn: () => Promise<{ error?: string }>, okMsg?: string) {
     setError(null);
     startTransition(async () => {
       const res = await fn();
@@ -75,6 +92,7 @@ export function PlanEditor({
         setError(res.error);
         return;
       }
+      if (okMsg) toast(okMsg, "ok");
       router.refresh();
     });
   }
@@ -87,13 +105,35 @@ export function PlanEditor({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Badge variant={submitted ? "success" : "warning"}>
+        <Badge variant={PLAN_STATUS_BADGE[status]}>
           {PLAN_STATUS_LABELS[status]}
         </Badge>
         <span className="text-sm text-muted-foreground">
           {items.length} firma
+          {doneCount > 0 && ` · ${doneCount} ziyaret edildi`}
         </span>
       </div>
+
+      {managerNote && (status === "reddedildi" || status === "onaylandi") && (
+        <div
+          className={cn(
+            "rounded-md border p-3 text-sm",
+            status === "reddedildi"
+              ? "border-destructive/30 bg-destructive/10"
+              : "bg-[hsl(var(--success-soft))]"
+          )}
+        >
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Yönetici notu
+          </div>
+          <p className="mt-1 whitespace-pre-wrap">{managerNote}</p>
+        </div>
+      )}
+      {status === "reddedildi" && !readOnly && (
+        <p className="text-sm text-muted-foreground">
+          Plan reddedildi. Düzeltmek için planı yeniden aç, sonra tekrar gönder.
+        </p>
+      )}
 
       {/* Add a company */}
       {editable &&
@@ -110,14 +150,14 @@ export function PlanEditor({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {COMPANY_KINDS.map((k) => (
                   <button
                     key={k}
                     type="button"
                     onClick={() => setKind(k)}
                     className={cn(
-                      "flex-1 rounded-md border px-3 py-1.5 text-sm font-medium",
+                      "rounded-md border px-3 py-1.5 text-sm font-medium",
                       kind === k
                         ? "border-primary bg-primary text-primary-foreground"
                         : "hover:bg-accent"
@@ -157,6 +197,7 @@ export function PlanEditor({
               planId={planId}
               dayOptions={dayOptions}
               lastVisitDate={lastVisit[it.companyId] ?? null}
+              done={planItemDone(it.plannedDate, visited[it.companyId])}
               editable={editable}
               pending={pending}
               onChange={run}
@@ -170,26 +211,37 @@ export function PlanEditor({
       )}
 
       {/* Submit / reopen */}
-      {!readOnly && (
+      {!readOnly && lockedReason && (
+        <p className="pt-2 text-center text-sm text-muted-foreground">
+          {lockedReason}
+        </p>
+      )}
+      {!readOnly && !lockedReason && (
         <div className="pt-2">
           {submitted ? (
-            <Button
+            <ConfirmButton
               variant="outline"
               className="w-full"
               disabled={pending}
-              onClick={() => run(() => reopenPlan(planId))}
+              message={
+                status === "onaylandi"
+                  ? "Onaylanmış planı yeniden açınca değişiklik sonrası tekrar onaya gönderilir. Devam edilsin mi?"
+                  : "Plan taslağa alınsın mı? Düzenledikten sonra tekrar göndermen gerekir."
+              }
+              confirmText="Yeniden aç"
+              onConfirm={() => run(() => reopenPlan(planId), "Plan taslağa alındı")}
             >
               <Unlock className="mr-2 h-4 w-4" /> Planı yeniden aç
-            </Button>
+            </ConfirmButton>
           ) : (
             <ConfirmButton
               className="w-full"
               disabled={pending || items.length === 0}
-              message="Plan gönderilsin mi? Gönderdikten sonra düzenlemek için yeniden açman gerekir."
+              message="Plan onaya gönderilsin mi? Gönderdikten sonra düzenlemek için yeniden açman gerekir."
               confirmText="Gönder"
-              onConfirm={() => run(() => submitPlan(planId))}
+              onConfirm={() => run(() => submitPlan(planId), "Plan gönderildi")}
             >
-              <Send className="mr-2 h-4 w-4" /> Planı gönder
+              <Send className="mr-2 h-4 w-4" /> Planı onaya gönder
             </ConfirmButton>
           )}
         </div>
@@ -203,6 +255,7 @@ function PlanItemRow({
   planId,
   dayOptions,
   lastVisitDate,
+  done,
   editable,
   pending,
   onChange,
@@ -211,6 +264,7 @@ function PlanItemRow({
   planId: string;
   dayOptions: { iso: string; label: string }[];
   lastVisitDate: string | null;
+  done: boolean;
   editable: boolean;
   pending: boolean;
   onChange: (fn: () => Promise<{ error?: string }>) => void;
@@ -236,13 +290,19 @@ function PlanItemRow({
   }
 
   return (
-    <Card>
+    <Card className={done ? "bg-muted/30" : undefined}>
       <CardContent className="space-y-2 p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2 font-medium">
-              <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span>{item.companyName}</span>
+              {done ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-[hsl(var(--success))]" />
+              ) : (
+                <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <span className={done ? "line-through text-muted-foreground" : undefined}>
+                {item.companyName}
+              </span>
               {item.segment && <Badge variant="secondary">{item.segment}</Badge>}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">

@@ -4,7 +4,9 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { weekRangeLabel, weekDayOptions } from "@/lib/week";
+import { visitedInWeek } from "@/lib/plans/visited";
 import { PlanEditor } from "@/components/plan-editor";
+import { PlanDecision } from "@/components/plan-decision";
 import type { PlanStatus, VisitType } from "@/lib/enums";
 
 type ItemRow = {
@@ -27,7 +29,7 @@ export default async function ManagerPlanDetailPage({
   const { data: plan } = await supabase
     .from("visit_plans")
     .select(
-      "id, week_start, status, note, submitted_at, salesperson:salesperson_id(full_name)"
+      "id, salesperson_id, week_start, status, note, submitted_at, manager_note, salesperson:salesperson_id(full_name)"
     )
     .eq("id", params.id)
     .single();
@@ -73,6 +75,12 @@ export default async function ManagerPlanDetailPage({
     );
   }
 
+  const visited = await visitedInWeek(supabase, {
+    salespersonId: plan.salesperson_id,
+    weekStart: plan.week_start,
+    companyIds,
+  });
+
   return (
     <div className="mx-auto max-w-md space-y-4">
       <Link
@@ -93,11 +101,15 @@ export default async function ManagerPlanDetailPage({
         planId={plan.id}
         status={plan.status as PlanStatus}
         note={plan.note}
+        managerNote={plan.manager_note}
         dayOptions={weekDayOptions(plan.week_start)}
         items={items}
         lastVisit={lastVisit}
+        visited={visited}
         readOnly
       />
+
+      <PlanDecision planId={plan.id} status={plan.status as PlanStatus} />
     </div>
   );
 }

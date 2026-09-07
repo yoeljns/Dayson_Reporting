@@ -38,7 +38,7 @@ export default async function ManagerVisitHistoryPage({
   };
 }) {
   const profile = await requireManager();
-  const isAdmin = profile.role === "admin";
+  const isAdmin = profile.role === "admin" || profile.role === "manager";
   const supabase = createClient();
 
   const statusFilter = VISIT_STATUSES.includes(searchParams.status as VisitStatus)

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PLAN_STATUS_LABELS, type PlanStatus } from "@/lib/enums";
+import { PLAN_STATUS_LABELS, PLAN_STATUS_BADGE, type PlanStatus } from "@/lib/enums";
 import { ensurePlan } from "@/app/(app)/plan/actions";
 
 type Week = {
@@ -56,7 +56,7 @@ export function PlanWeekPicker({ weeks }: { weeks: Week[] }) {
                 </div>
               </div>
               {w.planId ? (
-                <Badge variant={w.status === "gonderildi" ? "success" : "warning"}>
+                <Badge variant={PLAN_STATUS_BADGE[w.status ?? "taslak"]}>
                   {PLAN_STATUS_LABELS[w.status ?? "taslak"]}
                 </Badge>
               ) : (

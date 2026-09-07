@@ -10,7 +10,7 @@ import type { Company } from "@/types/db";
 
 type Hit = Pick<
   Company,
-  "id" | "name" | "kind" | "city" | "segment" | "logo_code"
+  "id" | "name" | "kind" | "city" | "segment" | "logo_code" | "plate_code"
 >;
 
 export function CompanySearch({
@@ -42,7 +42,7 @@ export function CompanySearch({
       setLoading(true);
       let query = supabase
         .from("companies")
-        .select("id, name, kind, city, segment, logo_code")
+        .select("id, name, kind, city, segment, logo_code, plate_code")
         .eq("kind", kind)
         .is("deleted_at", null)
         .order("name")
@@ -66,11 +66,7 @@ export function CompanySearch({
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           autoFocus
-          placeholder={
-            kind === "distributor"
-              ? "Bayi ara… (isim)"
-              : "Firma ara… (isim)"
-          }
+          placeholder={`${COMPANY_KIND_LABELS[kind]} ara… (isim)`}
           value={term}
           onChange={(e) => setTerm(e.target.value)}
           className="pl-9"
@@ -105,8 +101,12 @@ export function CompanySearch({
               <div>
                 <div className="font-medium">{c.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {[c.city, c.logo_code].filter(Boolean).join(" · ") ||
-                    COMPANY_KIND_LABELS[c.kind]}
+                  {[
+                    c.plate_code ? `${c.plate_code} ${c.city ?? ""}`.trim() : c.city,
+                    c.logo_code,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || COMPANY_KIND_LABELS[c.kind]}
                 </div>
               </div>
             </div>

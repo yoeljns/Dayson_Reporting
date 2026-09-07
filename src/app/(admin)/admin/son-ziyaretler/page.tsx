@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { LastVisitTable, type LastVisitRow } from "@/components/last-visit-table";
+import { groupAssignments, repIds } from "@/lib/assignments";
 
 export default async function ManagerLastVisitsPage() {
   await requireManager();
@@ -15,7 +16,7 @@ export default async function ManagerLastVisitsPage() {
         .is("deleted_at", null)
         .order("name")
         .limit(5000),
-      supabase.from("assignments").select("company_id, salesperson_id"),
+      supabase.from("assignments").select("company_id, salesperson_id, role"),
       supabase.from("profiles").select("id, full_name"),
       supabase
         .from("company_last_visit")
@@ -23,9 +24,7 @@ export default async function ManagerLastVisitsPage() {
     ]);
 
   const spName = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
-  const assignedTo = new Map(
-    (assignments ?? []).map((a) => [a.company_id, a.salesperson_id])
-  );
+  const assignedTo = groupAssignments(assignments);
   const lastMap = new Map(
     (lv ?? []).map((r) => [
       r.company_id,
@@ -34,13 +33,15 @@ export default async function ManagerLastVisitsPage() {
   );
 
   const rows: LastVisitRow[] = (companies ?? []).map((c) => {
-    const spId = assignedTo.get(c.id);
+    const names = repIds(assignedTo.get(c.id))
+      .map((id) => spName.get(id))
+      .filter(Boolean);
     return {
       companyId: c.id,
       name: c.name,
       city: c.city,
       segment: c.segment,
-      salesperson: spId ? spName.get(spId) ?? null : null,
+      salesperson: names.length > 0 ? names.join(", ") : null,
       lastVisit: lastMap.get(c.id)?.date ?? null,
       visitCount: lastMap.get(c.id)?.count ?? 0,
     };

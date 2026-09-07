@@ -37,7 +37,7 @@ export function PlanDeadlineBanner({
 
   const thisWeek = weekStartOf(now);
   const plan = plans.find((p) => p.week_start === thisWeek);
-  if (plan?.status === "gonderildi") return null; // already submitted → done
+  if (plan && plan.status !== "taslak") return null; // submitted / decided → done
 
   const deadline = deadlineFor(thisWeek, weekday, hour, minute);
   const overdue = now.getTime() >= deadline.getTime();

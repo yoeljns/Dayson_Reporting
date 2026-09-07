@@ -8,26 +8,89 @@ import {
   DEBT_STATUSES,
   type Segment,
   type DebtStatus,
+  type AssignmentRole,
 } from "@/lib/enums";
 
-/** Set (or clear) the salesperson assigned to a dealer. */
+function revalidateCompany(companyId: string) {
+  revalidatePath("/admin/bayiler");
+  revalidatePath("/admin/firmalar");
+  revalidatePath(`/admin/bayi/${companyId}`);
+  revalidatePath("/admin/son-ziyaretler");
+  revalidatePath("/admin");
+}
+
+/**
+ * Add a salesperson to a company (or change their role). A company has at
+ * most one owner (Sorumlu) and any number of backups (Yedek); promoting a new
+ * owner demotes the previous one instead of failing on the unique index.
+ */
+export async function upsertAssignment(input: {
+  companyId: string;
+  salespersonId: string;
+  role: AssignmentRole;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const admin = createAdminClient();
+  if (input.role === "owner") {
+    const { error: demoteErr } = await admin
+      .from("assignments")
+      .update({ role: "backup" })
+      .eq("company_id", input.companyId)
+      .eq("role", "owner")
+      .neq("salesperson_id", input.salespersonId);
+    if (demoteErr) return { error: demoteErr.message };
+  }
+  const { error } = await admin.from("assignments").upsert(
+    {
+      company_id: input.companyId,
+      salesperson_id: input.salespersonId,
+      role: input.role,
+    },
+    { onConflict: "company_id,salesperson_id" }
+  );
+  if (error) return { error: error.message };
+  revalidateCompany(input.companyId);
+  return { ok: true };
+}
+
+/** Remove one salesperson from a company. */
+export async function removeAssignment(input: {
+  companyId: string;
+  salespersonId: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("assignments")
+    .delete()
+    .eq("company_id", input.companyId)
+    .eq("salesperson_id", input.salespersonId);
+  if (error) return { error: error.message };
+  revalidateCompany(input.companyId);
+  return { ok: true };
+}
+
+/** Legacy single-select path: make this rep the owner (or clear everyone). */
 export async function assignDealer(input: {
   companyId: string;
   salespersonId: string | null;
 }): Promise<{ ok?: boolean; error?: string }> {
   await requireManager();
-  const admin = createAdminClient();
-
-  await admin.from("assignments").delete().eq("company_id", input.companyId);
-  if (input.salespersonId) {
-    const { error } = await admin.from("assignments").insert({
-      company_id: input.companyId,
-      salesperson_id: input.salespersonId,
-    });
+  if (!input.salespersonId) {
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("assignments")
+      .delete()
+      .eq("company_id", input.companyId);
     if (error) return { error: error.message };
+    revalidateCompany(input.companyId);
+    return { ok: true };
   }
-  revalidatePath("/admin/bayiler");
-  return { ok: true };
+  return upsertAssignment({
+    companyId: input.companyId,
+    salespersonId: input.salespersonId,
+    role: "owner",
+  });
 }
 
 /**
@@ -123,14 +186,14 @@ export async function createDealer(input: {
     companyId = data.id;
   }
 
-  // Optional initial assignment (replace any existing, mirroring assignDealer).
-  if (input.salespersonId) {
-    await admin.from("assignments").delete().eq("company_id", companyId);
-    const { error } = await admin.from("assignments").insert({
-      company_id: companyId,
-      salesperson_id: input.salespersonId,
+  // Optional initial owner.
+  if (input.salespersonId && companyId) {
+    const res = await upsertAssignment({
+      companyId,
+      salespersonId: input.salespersonId,
+      role: "owner",
     });
-    if (error) return { error: error.message };
+    if (res.error) return { error: res.error };
   }
 
   revalidatePath("/admin/bayiler");

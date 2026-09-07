@@ -83,8 +83,9 @@ export default async function DealerFilePage({
       .limit(HISTORY_LIMIT),
     supabase
       .from("assignments")
-      .select("salesperson_id, profiles:salesperson_id(full_name)")
-      .eq("company_id", companyId),
+      .select("salesperson_id, role, profiles:salesperson_id(full_name)")
+      .eq("company_id", companyId)
+      .order("role"),
     supabase
       .from("company_contacts")
       .select("id, name, phone, role")
@@ -200,13 +201,22 @@ export default async function DealerFilePage({
 
   const reps = ((assignRows ?? []) as {
     salesperson_id: string;
+    role: string | null;
     profiles: { full_name: string } | { full_name: string }[] | null;
   }[])
     .map((a) => ({
       id: a.salesperson_id,
+      role: a.role ?? "owner",
       name: one(a.profiles)?.full_name ?? "—",
     }))
-    .sort((a, b) => a.name.localeCompare(b.name, "tr"));
+    // Owner first, then backups alphabetically.
+    .sort((a, b) =>
+      a.role === b.role
+        ? a.name.localeCompare(b.name, "tr")
+        : a.role === "owner"
+          ? -1
+          : 1
+    );
 
   const last = visits[0];
   const older = visits.slice(1);
@@ -263,11 +273,15 @@ export default async function DealerFilePage({
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
             <Fact label="Telefon" value={company.phone || "—"} />
             <Fact
-              label="Sorumlu pazarlamacı"
+              label="Pazarlamacılar"
               value={
                 reps.length === 0
                   ? "Atanmamış"
-                  : reps.map((r) => r.name).join(", ")
+                  : reps
+                      .map((r) =>
+                        r.role === "owner" ? `${r.name} (sorumlu)` : `${r.name} (yedek)`
+                      )
+                      .join(", ")
               }
             />
             <Fact

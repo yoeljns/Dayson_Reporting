@@ -143,10 +143,19 @@ export async function POST(request: Request) {
           message: `Pazarlamacı bulunamadı: ${r.pazarlamaci_email}`,
         });
       } else {
-        await admin.from("assignments").delete().eq("company_id", companyId);
+        // The imported rep becomes the owner; other reps stay as backups.
         await admin
           .from("assignments")
-          .insert({ company_id: companyId, salesperson_id: spId });
+          .update({ role: "backup" })
+          .eq("company_id", companyId)
+          .eq("role", "owner")
+          .neq("salesperson_id", spId);
+        await admin
+          .from("assignments")
+          .upsert(
+            { company_id: companyId, salesperson_id: spId, role: "owner" },
+            { onConflict: "company_id,salesperson_id" }
+          );
       }
     }
   }
