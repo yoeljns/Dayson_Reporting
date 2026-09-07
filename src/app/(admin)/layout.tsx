@@ -16,6 +16,7 @@ const adminLinks: AdminLink[] = [
   { href: "/admin/ziyaretler", label: "Ziyaretler", group: "Saha" },
   { href: "/admin/son-ziyaretler", label: "Son Ziyaretler", group: "Saha" },
   { href: "/admin/silinen-ziyaretler", label: "Silinenler", group: "Saha" },
+  { href: "/admin/haftalik", label: "Haftalık Özet", group: "Takip" },
   { href: "/admin/planlar", label: "Plan Onayı", group: "Takip" },
   { href: "/admin/sikayetler", label: "Şikayet Panosu", group: "Takip" },
   { href: "/admin/rakip-haritasi", label: "Rakip Bilgileri", group: "Takip" },

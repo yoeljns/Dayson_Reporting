@@ -17,7 +17,9 @@ import {
   updateUserName,
   updateUserRole,
   toggleUserActive,
+  setUserPassword,
 } from "@/app/(admin)/admin/kullanicilar/actions";
+import { KeyRound } from "lucide-react";
 
 export function UserManager({ users }: { users: Profile[] }) {
   const router = useRouter();
@@ -173,6 +175,25 @@ function UserRow({
   const [saving, startSave] = useTransition();
   const [nameErr, setNameErr] = useState<string | null>(null);
   const dirty = name.trim() !== (user.full_name ?? "").trim();
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwErr, setPwErr] = useState<string | null>(null);
+
+  function savePassword() {
+    setPwErr(null);
+    setPwMsg(null);
+    startSave(async () => {
+      const res = await setUserPassword({ userId: user.id, password: pw });
+      if (res.error) {
+        setPwErr(res.error);
+        return;
+      }
+      setPw("");
+      setPwOpen(false);
+      setPwMsg("Şifre güncellendi; kullanıcıya yeni şifreyi iletin.");
+    });
+  }
 
   function saveName() {
     setNameErr(null);
@@ -218,6 +239,26 @@ function UserRow({
             </Link>
           )}
           {nameErr && <p className="text-xs text-destructive">{nameErr}</p>}
+          {pwOpen && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Input
+                type="text"
+                autoComplete="off"
+                placeholder="Yeni şifre (en az 6 karakter)"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                className="h-9 max-w-[16rem]"
+              />
+              <Button size="sm" disabled={saving || pw.length < 6} onClick={savePassword}>
+                Şifreyi kaydet
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setPwOpen(false); setPw(""); }}>
+                Vazgeç
+              </Button>
+            </div>
+          )}
+          {pwErr && <p className="text-xs text-destructive">{pwErr}</p>}
+          {pwMsg && <p className="text-xs text-[hsl(var(--success))]">{pwMsg}</p>}
         </div>
         <div className="flex items-center gap-2">
           <Select
@@ -231,6 +272,15 @@ function UserRow({
               </option>
             ))}
           </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Şifre belirle"
+            disabled={pending}
+            onClick={() => setPwOpen((v) => !v)}
+          >
+            <KeyRound className="mr-1 h-4 w-4" /> Şifre
+          </Button>
           <Button
             variant={user.is_active ? "outline" : "default"}
             size="sm"

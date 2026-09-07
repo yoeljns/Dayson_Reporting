@@ -13,13 +13,12 @@ export default async function QuestionsPage() {
     .order("created_at");
 
   return (
-    <div className="max-w-3xl space-y-4">
-      <h1 className="text-xl font-semibold">Ziyaret Soru Kataloğu</h1>
+    <div className="max-w-5xl space-y-4">
       <p className="text-sm text-muted-foreground">
         Ziyaret formundaki alanlar. Her soru için zorunluluk, hangi kanalda
         (telefon / yüz yüze) ve hangi firma türünde sorulacağı, seçenekler ve
-        sıra buradan yönetilir. Kilit simgeli sorular sihirbazın sabit
-        adımlarıdır; pasifleştirilemez ama zorunluluğu kaldırılabilir.
+        sıra &quot;Düzenle&quot; ile yönetilir. Kilit simgeli sorular sihirbazın
+        sabit adımlarıdır; pasifleştirilemez ama zorunluluğu kaldırılabilir.
       </p>
       <QuestionManager
         questions={(questions as QuestionWithOptions[]) ?? []}

@@ -34,7 +34,16 @@ export async function GET(request: Request) {
   const wb = newWorkbook();
   let filenameBase = "rapor";
 
-  if (type === "all") {
+  if (type === "haftalik") {
+    // Weekly pack: the week's visit reports + the week's plans in one file.
+    const z = await REPORTS.ziyaret.build(supabase, filters);
+    appendSheet(wb, "Ziyaretler", z.rows, z.headers);
+    const pl = await REPORTS.plan.build(supabase, filters);
+    appendSheet(wb, "Planlar", pl.rows, pl.headers);
+    if (z.capped)
+      appendSheet(wb, "Bilgi", [{ Bilgi: `Ziyaretler ${z.rows.length} kayıtla sınırlandı.` }], ["Bilgi"]);
+    filenameBase = `haftalik-${filters.start ?? "hafta"}`;
+  } else if (type === "all") {
     const notes: { Bilgi: string }[] = [];
     for (const t of REPORT_ORDER) {
       const def = REPORTS[t];

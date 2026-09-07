@@ -652,6 +652,9 @@ export default async function ManagerDashboardPage() {
             Hızlı raporlar (Excel)
           </h2>
           <div className="flex gap-3 text-sm">
+            <Link href="/admin/haftalik" className="text-primary hover:underline">
+              Haftalık özet (plan + raporlar) →
+            </Link>
             <Link href="/admin/raporlar" className="text-primary hover:underline">
               Tüm raporlar →
             </Link>

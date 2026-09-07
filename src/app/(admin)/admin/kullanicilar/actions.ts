@@ -127,3 +127,19 @@ export async function toggleUserActive(input: {
   revalidatePath("/admin/kullanicilar");
   return { ok: true };
 }
+
+/** Set a user's password directly (admin only) — for reps who forgot theirs. */
+export async function setUserPassword(input: {
+  userId: string;
+  password: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireAdmin();
+  const pw = input.password ?? "";
+  if (pw.length < 6) return { error: "Şifre en az 6 karakter olmalı." };
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(input.userId, {
+    password: pw,
+  });
+  if (error) return { error: error.message };
+  return { ok: true };
+}
