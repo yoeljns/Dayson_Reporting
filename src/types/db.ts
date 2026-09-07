@@ -14,6 +14,11 @@ import type {
   ComplaintOwnerDept,
   ImportStatus,
   PlanStatus,
+  AssignmentRole,
+  SurveyStatus,
+  SurveyInputType,
+  TargetStatus,
+  DocumentRefTable,
 } from "@/lib/enums";
 
 export interface Profile {
@@ -37,6 +42,10 @@ export interface Company {
   city: string | null;
   phone: string | null;
   notes: string | null;
+  /** 2-digit il plaka kodu; used for survey targeting. */
+  plate_code: string | null;
+  /** Sub-dealer buys through this dealer ("X üzerinden alıyor"). */
+  buys_from_company_id: string | null;
   created_by: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -47,6 +56,7 @@ export interface Assignment {
   id: string;
   company_id: string;
   salesperson_id: string;
+  role: AssignmentRole;
   created_at: string;
 }
 
@@ -166,6 +176,9 @@ export interface VisitPlan {
   status: PlanStatus;
   note: string | null;
   submitted_at: string | null;
+  approved_by: string | null;
+  decided_at: string | null;
+  manager_note: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -218,9 +231,20 @@ export interface Competitor {
   is_active: boolean;
 }
 
+export interface CompetitorProduct {
+  id: string;
+  competitor_id: string;
+  category_id: string | null;
+  name: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface CompetitorObservation {
   id: string;
   competitor_id: string;
+  competitor_product_id: string | null;
   company_id: string | null;
   salesperson_id: string;
   visit_id: string | null;
@@ -251,4 +275,110 @@ export interface ImportRowError {
   row: number;
   logo_code?: string;
   message: string;
+}
+
+export interface Document {
+  id: string;
+  kind: "photo";
+  storage_path: string;
+  mime: string;
+  size_bytes: number | null;
+  company_id: string | null;
+  ref_table: DocumentRefTable;
+  ref_id: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export interface Survey {
+  id: string;
+  name: string;
+  description: string | null;
+  status: SurveyStatus;
+  valid_from: string | null;
+  valid_to: string | null;
+  target_kinds: CompanyKind[] | null;
+  target_plates: string[] | null;
+  target_reps: string[] | null;
+  allow_repeat: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SurveyQuestion {
+  id: string;
+  survey_id: string;
+  sort_order: number;
+  prompt: string;
+  input_type: SurveyInputType;
+  /** select: [{value,label}] · scale: {min,max} */
+  options: unknown;
+  is_required: boolean;
+  created_at: string;
+}
+
+export interface SurveyAnswer {
+  id: string;
+  survey_id: string;
+  company_id: string;
+  visit_id: string | null;
+  salesperson_id: string;
+  answered_at: string;
+  answers: Record<string, string | number | boolean | null>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Sku {
+  id: string;
+  code: string;
+  name_tr: string;
+  category_id: string | null;
+  units_per_box: number | null;
+  in_stock_count: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface StockCount {
+  id: string;
+  company_id: string;
+  visit_id: string | null;
+  salesperson_id: string;
+  counted_at: string;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockCountLine {
+  id: string;
+  stock_count_id: string;
+  sku_id: string;
+  pallets: number;
+}
+
+export interface DealerTarget {
+  id: string;
+  company_id: string;
+  year: number;
+  status: TargetStatus;
+  agreed_at: string | null;
+  agreed_with: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DealerTargetLine {
+  id: string;
+  target_id: string;
+  category_id: string;
+  target_qty: number;
+  target_eur: number;
+  actual_qty: number;
+  actual_eur: number;
 }

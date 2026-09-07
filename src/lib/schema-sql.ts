@@ -520,6 +520,29 @@ where q.code = 'sonraki_aksiyon'
 -- placeholder rows are seeded here.
 `;
 
+export const PATCH_PRE_SQL = `-- ────── 0019_enums_kinds_plans.sql ──────
+-- ============================================================================
+-- Enum additions ONLY. This file is bundled into PATCH_PRE_SQL and applied in
+-- its own transaction BEFORE the rest of the patches, because Postgres refuses
+-- to use a new enum value inside the transaction that added it. Anything that
+-- references these values lives in 0020+.
+--
+-- Applying by hand (SQL editor): run this file on its own first.
+-- ============================================================================
+select pg_advisory_xact_lock(872764184);
+
+-- plan_status is created by 0006 (a PATCH file). On a fresh install this file
+-- runs before it, so create the type here; 0006's guarded create then no-ops.
+do $$ begin
+  create type plan_status as enum ('taslak','gonderildi');
+exception when duplicate_object then null; end $$;
+
+alter type company_kind add value if not exists 'sub_dealer';
+alter type company_kind add value if not exists 'competitor_point';
+alter type plan_status  add value if not exists 'onaylandi';
+alter type plan_status  add value if not exists 'reddedildi';
+`;
+
 export const PATCH_SQL = `-- ────── 0003_complainant.sql ──────
 -- ============================================================================
 -- Patch: complaints can be raised by someone NOT registered in the system,
@@ -1276,4 +1299,465 @@ alter table profiles add column if not exists management_mode boolean;
 
 comment on column profiles.management_mode is
   'UI mode for managers/admins: true = management/viewing, false = reporting, null = role default.';
+
+-- ────── 0020_company_kinds.sql ──────
+-- ============================================================================
+-- Four company kinds (Bayi · Potansiyel bayi · Alt bayi · Rakip noktası),
+-- plate code, "buys via dealer" link, and field registration that assigns the
+-- registering salesperson. Enum values come from 0019 (pre-phase).
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+alter table companies add column if not exists plate_code text;
+alter table companies add column if not exists buys_from_company_id uuid references companies(id);
+do $$ begin
+  alter table companies add constraint companies_plate_code_chk
+    check (plate_code is null or plate_code ~ '^[0-9]{2}$');
+exception when duplicate_object then null; end $$;
+create index if not exists idx_companies_plate on companies(plate_code);
+create index if not exists idx_companies_buys_from on companies(buys_from_company_id);
+
+-- Every non-distributor kind is visible to all reps (was: only non_customer).
+drop policy if exists companies_select on companies;
+create policy companies_select on companies for select
+  using (
+    kind <> 'distributor'
+    or is_manager()
+    or exists (select 1 from assignments a
+               where a.company_id = companies.id and a.salesperson_id = auth.uid())
+  );
+drop policy if exists companies_insert_noncustomer on companies;
+create policy companies_insert_noncustomer on companies for insert
+  with check (kind in ('non_customer','sub_dealer','competitor_point') and created_by = auth.uid());
+-- Reps may correct plate / buys_from on companies they registered.
+drop policy if exists companies_update_own_field on companies;
+create policy companies_update_own_field on companies for update
+  using (created_by = auth.uid() and kind <> 'distributor')
+  with check (created_by = auth.uid() and kind <> 'distributor');
+
+-- company_contacts_select referenced kind = 'non_customer'.
+drop policy if exists company_contacts_select on company_contacts;
+create policy company_contacts_select on company_contacts for select
+  using (
+    is_manager()
+    or exists (select 1 from companies c
+               where c.id = company_contacts.company_id
+                 and (c.kind <> 'distributor'
+                      or exists (select 1 from assignments a
+                                 where a.company_id = c.id and a.salesperson_id = auth.uid())))
+  );
+
+-- Field registration: creates (or reuses) the company AND assigns the caller.
+-- p_id lets the offline queue replay idempotently.
+create or replace function register_company_from_field(
+  p_kind                 company_kind,
+  p_name                 text,
+  p_city                 text default null,
+  p_plate_code           text default null,
+  p_phone                text default null,
+  p_buys_from_company_id uuid default null,
+  p_notes                text default null,
+  p_id                   uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_id    uuid;
+  v_name  text := trim(coalesce(p_name, ''));
+  v_plate text := nullif(trim(coalesce(p_plate_code, '')), '');
+begin
+  if v_uid is null then raise exception 'Yetkisiz'; end if;
+  if p_kind not in ('non_customer','sub_dealer','competitor_point') then
+    raise exception 'Bu firma türü sahadan kaydedilemez';
+  end if;
+  if v_name = '' then raise exception 'Firma adı zorunludur'; end if;
+  if v_plate is not null and v_plate !~ '^[0-9]{2}$' then
+    raise exception 'Plaka kodu 2 haneli olmalı';
+  end if;
+  if p_buys_from_company_id is not null and not exists (
+    select 1 from companies where id = p_buys_from_company_id
+      and kind = 'distributor' and deleted_at is null) then
+    raise exception 'Hizmet veren bayi bulunamadı';
+  end if;
+
+  if p_id is not null then
+    select id into v_id from companies where id = p_id;          -- replayed op
+  end if;
+  if v_id is null then
+    select id into v_id from companies
+     where kind = p_kind and deleted_at is null and lower(name) = lower(v_name)
+     limit 1;                                                    -- duplicate name
+  end if;
+  if v_id is null then
+    insert into companies (id, kind, name, city, plate_code, phone,
+                           buys_from_company_id, notes, created_by)
+    values (coalesce(p_id, gen_random_uuid()), p_kind, v_name,
+            nullif(trim(coalesce(p_city,'')), ''), v_plate,
+            nullif(trim(coalesce(p_phone,'')), ''), p_buys_from_company_id,
+            nullif(trim(coalesce(p_notes,'')), ''), v_uid)
+    returning id into v_id;
+  end if;
+
+  insert into assignments (company_id, salesperson_id, role)
+  values (v_id, v_uid,
+          case when exists (select 1 from assignments where company_id = v_id and role = 'owner')
+               then 'backup' else 'owner' end)
+  on conflict (company_id, salesperson_id) do nothing;
+  return v_id;
+end;
+$$;
+
+-- ────── 0021_assignment_roles.sql ──────
+-- ============================================================================
+-- Several salespeople per company: one owner (Sorumlu) + any number of
+-- backups (Yedek). Managers manage assignments through RLS as well.
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+alter table assignments add column if not exists role text not null default 'owner';
+do $$ begin
+  alter table assignments add constraint assignments_role_chk check (role in ('owner','backup'));
+exception when duplicate_object then null; end $$;
+-- Exactly one owner per company (oldest row keeps it). Idempotent.
+update assignments a set role = 'backup'
+ where a.role = 'owner'
+   and exists (select 1 from assignments b
+               where b.company_id = a.company_id and b.role = 'owner'
+                 and (b.created_at, b.id) < (a.created_at, a.id));
+create unique index if not exists uq_assignments_owner on assignments(company_id) where role = 'owner';
+drop policy if exists assignments_manager_write on assignments;
+create policy assignments_manager_write on assignments for all
+  using (is_manager()) with check (is_manager());
+
+-- ────── 0022_plan_approval.sql ──────
+-- ============================================================================
+-- Weekly plan approval: manager approves or rejects (with a note). Enum values
+-- 'onaylandi' / 'reddedildi' come from 0019. 'gonderildi' now means "awaiting
+-- approval".
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+alter table visit_plans add column if not exists approved_by  uuid references profiles(id);
+alter table visit_plans add column if not exists decided_at   timestamptz;
+alter table visit_plans add column if not exists manager_note text;
+
+-- A rep's own update can never produce a decided state: any rep write lands in
+-- taslak/gonderildi with the decision cleared (reopen/submit set these nulls).
+drop policy if exists visit_plans_update_own on visit_plans;
+create policy visit_plans_update_own on visit_plans for update
+  using (salesperson_id = auth.uid())
+  with check (salesperson_id = auth.uid()
+              and status in ('taslak','gonderildi')
+              and approved_by is null and decided_at is null);
+-- Items editable only while the plan is a draft.
+drop policy if exists vplan_items_write on visit_plan_items;
+create policy vplan_items_write on visit_plan_items for all
+  using (exists (select 1 from visit_plans p
+                 where p.id = visit_plan_items.plan_id
+                   and p.salesperson_id = auth.uid() and p.status = 'taslak'))
+  with check (exists (select 1 from visit_plans p
+                      where p.id = visit_plan_items.plan_id
+                        and p.salesperson_id = auth.uid() and p.status = 'taslak'));
+
+create or replace function decide_visit_plan(p_plan_id uuid, p_decision plan_status, p_note text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_status plan_status;
+  v_uid    uuid := auth.uid();
+begin
+  if v_uid is null or not is_manager() then raise exception 'Yetkisiz'; end if;
+  if p_decision not in ('onaylandi','reddedildi') then raise exception 'Geçersiz karar'; end if;
+  select status into v_status from visit_plans where id = p_plan_id for update;
+  if v_status is null then raise exception 'Plan bulunamadı'; end if;
+  if v_status = 'taslak' then raise exception 'Gönderilmemiş plan karara bağlanamaz'; end if;
+  if p_decision = 'reddedildi' and coalesce(trim(p_note), '') = '' then
+    raise exception 'Ret için açıklama zorunludur';
+  end if;
+  update visit_plans
+     set status = p_decision, approved_by = v_uid, decided_at = now(),
+         manager_note = nullif(trim(coalesce(p_note,'')), ''), updated_at = now()
+   where id = p_plan_id;
+end;
+$$;
+
+-- ────── 0023_documents.sql ──────
+-- ============================================================================
+-- Photo attachments index. Bytes live in the private Storage bucket
+-- "field-photos" (created via the Storage API, not SQL — the migration role
+-- does not own storage.objects); this table is the app-side index.
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+create table if not exists documents (
+  id           uuid primary key default gen_random_uuid(),
+  kind         text not null default 'photo' check (kind in ('photo')),
+  storage_path text not null unique,
+  mime         text not null check (mime in ('image/jpeg','image/png','image/webp')),
+  size_bytes   int,
+  company_id   uuid references companies(id),
+  ref_table    text not null check (ref_table in ('visit','complaint','competitor_observation','stock_count')),
+  ref_id       uuid not null,
+  uploaded_by  uuid not null references profiles(id),
+  uploaded_at  timestamptz not null default now()
+);
+create index if not exists idx_documents_ref on documents(ref_table, ref_id);
+create index if not exists idx_documents_company on documents(company_id);
+alter table documents enable row level security;
+drop policy if exists documents_select on documents;
+create policy documents_select on documents for select
+  using (uploaded_by = auth.uid() or is_manager());
+drop policy if exists documents_insert_own on documents;
+create policy documents_insert_own on documents for insert
+  with check (uploaded_by = auth.uid());
+drop policy if exists documents_delete on documents;
+create policy documents_delete on documents for delete
+  using (uploaded_by = auth.uid() or is_manager());
+
+-- ────── 0024_surveys.sql ──────
+-- ============================================================================
+-- Özel raporlar (surveys): management publishes targeted questionnaires,
+-- reps answer them per company (once per day unless allow_repeat).
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+create table if not exists surveys (
+  id            uuid primary key default gen_random_uuid(),
+  name          text not null,
+  description   text,
+  status        text not null default 'taslak' check (status in ('taslak','aktif','kapandi')),
+  valid_from    date,
+  valid_to      date,
+  target_kinds  company_kind[],     -- null = all kinds
+  target_plates text[],             -- null = all plates
+  target_reps   uuid[],             -- null = all reps
+  allow_repeat  boolean not null default false,
+  created_by    uuid references profiles(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create table if not exists survey_questions (
+  id          uuid primary key default gen_random_uuid(),
+  survey_id   uuid not null references surveys(id) on delete cascade,
+  sort_order  int not null default 0,
+  prompt      text not null,
+  input_type  text not null check (input_type in ('boolean','select','number','text','scale')),
+  options     jsonb,                -- select: [{"value","label"}]  scale: {"min","max"}
+  is_required boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_survey_questions_survey on survey_questions(survey_id, sort_order);
+create table if not exists survey_answers (
+  id             uuid primary key default gen_random_uuid(),
+  survey_id      uuid not null references surveys(id) on delete cascade,
+  company_id     uuid not null references companies(id),
+  visit_id       uuid references visits(id) on delete set null,
+  salesperson_id uuid not null references profiles(id),
+  answered_at    date not null default current_date,
+  answers        jsonb not null default '{}'::jsonb,   -- {question_id: value}
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  unique (survey_id, company_id, salesperson_id, answered_at)
+);
+create index if not exists idx_survey_answers_survey on survey_answers(survey_id, company_id);
+create index if not exists idx_survey_answers_sp on survey_answers(salesperson_id);
+
+alter table surveys          enable row level security;
+alter table survey_questions enable row level security;
+alter table survey_answers   enable row level security;
+
+drop policy if exists surveys_manager_all on surveys;
+create policy surveys_manager_all on surveys for all using (is_manager()) with check (is_manager());
+drop policy if exists surveys_select_active on surveys;
+create policy surveys_select_active on surveys for select
+  using (status = 'aktif'
+         and (valid_from is null or valid_from <= current_date)
+         and (valid_to   is null or valid_to   >= current_date)
+         and (target_reps is null or auth.uid() = any(target_reps)));
+drop policy if exists survey_questions_manager_all on survey_questions;
+create policy survey_questions_manager_all on survey_questions for all using (is_manager()) with check (is_manager());
+drop policy if exists survey_questions_select on survey_questions;
+create policy survey_questions_select on survey_questions for select
+  using (exists (select 1 from surveys s where s.id = survey_questions.survey_id));
+drop policy if exists survey_answers_manager_all on survey_answers;
+create policy survey_answers_manager_all on survey_answers for all using (is_manager()) with check (is_manager());
+drop policy if exists survey_answers_own on survey_answers;
+create policy survey_answers_own on survey_answers for all
+  using (salesperson_id = auth.uid()) with check (salesperson_id = auth.uid());
+
+-- ────── 0025_stock_counts.sql ──────
+-- ============================================================================
+-- Stock counts (palet sayımı) at dealers. The admin picks which SKUs appear in
+-- the count (skus.in_stock_count). Only distributors may have counts.
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+create table if not exists skus (
+  id             uuid primary key default gen_random_uuid(),
+  code           text unique not null,
+  name_tr        text not null,
+  category_id    uuid references product_categories(id),
+  units_per_box  int,
+  in_stock_count boolean not null default true,
+  is_active      boolean not null default true,
+  sort_order     int not null default 0,
+  created_at     timestamptz not null default now()
+);
+create table if not exists stock_counts (
+  id             uuid primary key default gen_random_uuid(),
+  company_id     uuid not null references companies(id),
+  visit_id       uuid references visits(id) on delete set null,
+  salesperson_id uuid not null references profiles(id),
+  counted_at     date not null default current_date,
+  note           text,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+create index if not exists idx_stock_counts_company on stock_counts(company_id, counted_at desc);
+create index if not exists idx_stock_counts_sp on stock_counts(salesperson_id);
+create table if not exists stock_count_lines (
+  id             uuid primary key default gen_random_uuid(),
+  stock_count_id uuid not null references stock_counts(id) on delete cascade,
+  sku_id         uuid not null references skus(id),
+  pallets        numeric(6,1) not null default 0 check (pallets >= 0),
+  unique (stock_count_id, sku_id)
+);
+
+-- security definer: the assert must not depend on the caller's company visibility.
+create or replace function assert_stock_count_distributor()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from companies c where c.id = new.company_id and c.kind = 'distributor') then
+    raise exception 'Stok sayımı yalnızca bayi/distribütör için girilebilir';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists trg_stock_counts_distributor on stock_counts;
+create trigger trg_stock_counts_distributor
+  before insert or update of company_id on stock_counts
+  for each row execute function assert_stock_count_distributor();
+
+-- Atomic line replace (same pattern as replace_visit_answers; RLS applies).
+create or replace function replace_stock_count_lines(p_stock_count_id uuid, p_rows jsonb)
+returns void language plpgsql security invoker set search_path = public as $$
+begin
+  delete from stock_count_lines where stock_count_id = p_stock_count_id;
+  insert into stock_count_lines (stock_count_id, sku_id, pallets)
+  select p_stock_count_id, (r->>'sku_id')::uuid, coalesce((nullif(r->>'pallets',''))::numeric, 0)
+  from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r;
+end;
+$$;
+
+alter table skus              enable row level security;
+alter table stock_counts      enable row level security;
+alter table stock_count_lines enable row level security;
+drop policy if exists skus_select on skus;
+create policy skus_select on skus for select using (true);
+drop policy if exists skus_admin_write on skus;
+create policy skus_admin_write on skus for all using (is_admin()) with check (is_admin());
+drop policy if exists stock_counts_manager_all on stock_counts;
+create policy stock_counts_manager_all on stock_counts for all using (is_manager()) with check (is_manager());
+drop policy if exists stock_counts_own on stock_counts;
+create policy stock_counts_own on stock_counts for all
+  using (salesperson_id = auth.uid())
+  with check (salesperson_id = auth.uid()
+              and exists (select 1 from assignments a
+                          where a.company_id = stock_counts.company_id and a.salesperson_id = auth.uid()));
+drop policy if exists stock_count_lines_rw on stock_count_lines;
+create policy stock_count_lines_rw on stock_count_lines for all
+  using (exists (select 1 from stock_counts s where s.id = stock_count_lines.stock_count_id
+                 and (s.salesperson_id = auth.uid() or is_manager())))
+  with check (exists (select 1 from stock_counts s where s.id = stock_count_lines.stock_count_id
+                      and (s.salesperson_id = auth.uid() or is_manager())));
+
+-- ────── 0026_dealer_targets.sql ──────
+-- ============================================================================
+-- Yearly dealer targets per product category. Actuals are entered manually by
+-- the office (no order system).
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+create table if not exists dealer_targets (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references companies(id),
+  year        int not null check (year between 2020 and 2100),
+  status      text not null default 'taslak' check (status in ('taslak','mutabik','iptal')),
+  agreed_at   date,
+  agreed_with uuid references company_contacts(id),
+  note        text,
+  created_by  uuid references profiles(id),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (company_id, year)
+);
+create table if not exists dealer_target_lines (
+  id          uuid primary key default gen_random_uuid(),
+  target_id   uuid not null references dealer_targets(id) on delete cascade,
+  category_id uuid not null references product_categories(id),
+  target_qty  int not null default 0,
+  target_eur  numeric(14,2) not null default 0,
+  actual_qty  int not null default 0,          -- entered manually by office
+  actual_eur  numeric(14,2) not null default 0,
+  unique (target_id, category_id)
+);
+alter table dealer_targets      enable row level security;
+alter table dealer_target_lines enable row level security;
+drop policy if exists dealer_targets_manager_all on dealer_targets;
+create policy dealer_targets_manager_all on dealer_targets for all using (is_manager()) with check (is_manager());
+drop policy if exists dealer_targets_select_assigned on dealer_targets;
+create policy dealer_targets_select_assigned on dealer_targets for select
+  using (exists (select 1 from assignments a
+                 where a.company_id = dealer_targets.company_id and a.salesperson_id = auth.uid()));
+drop policy if exists dealer_target_lines_manager_all on dealer_target_lines;
+create policy dealer_target_lines_manager_all on dealer_target_lines for all using (is_manager()) with check (is_manager());
+drop policy if exists dealer_target_lines_select_assigned on dealer_target_lines;
+create policy dealer_target_lines_select_assigned on dealer_target_lines for select
+  using (exists (select 1 from dealer_targets t join assignments a on a.company_id = t.company_id
+                 where t.id = dealer_target_lines.target_id and a.salesperson_id = auth.uid()));
+
+-- ────── 0027_competitor_products.sql ──────
+-- ============================================================================
+-- Competitor product catalog: chips in the rakip form; free-text products get a
+-- "serbest" badge and can be mapped to the catalog by the office.
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+create table if not exists competitor_products (
+  id            uuid primary key default gen_random_uuid(),
+  competitor_id uuid not null references competitors(id) on delete cascade,
+  category_id   uuid references product_categories(id),
+  name          text not null,
+  is_active     boolean not null default true,
+  created_by    uuid references profiles(id),
+  created_at    timestamptz not null default now()
+);
+create unique index if not exists uq_competitor_products_name on competitor_products(competitor_id, lower(name));
+alter table competitor_observations add column if not exists competitor_product_id uuid references competitor_products(id);
+create index if not exists idx_compobs_product on competitor_observations(competitor_product_id);
+alter table competitor_products enable row level security;
+drop policy if exists competitor_products_select on competitor_products;
+create policy competitor_products_select on competitor_products for select using (true);
+drop policy if exists competitor_products_insert_auth on competitor_products;
+create policy competitor_products_insert_auth on competitor_products for insert with check (auth.uid() is not null);
+drop policy if exists competitor_products_admin_write on competitor_products;
+create policy competitor_products_admin_write on competitor_products for all using (is_admin()) with check (is_admin());
+
+-- ────── 0028_question_tweaks.sql ──────
+-- ============================================================================
+-- Question catalog adjustments for the new company kinds and the removal of
+-- the order step from the wizard.
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+-- "Hizmet veren bayi" now applies to prospects and sub-dealers.
+update questions set applies_to_kind = array['non_customer','sub_dealer']::company_kind[]
+ where code = 'hiz_veren_bayi';
+-- The order step is gone; its questions become plain optional extras (guarded once
+-- so a later admin choice survives replays).
+do $$ begin
+  if not exists (select 1 from app_settings where key = 'order_questions_optional_v1') then
+    update questions set is_required = false where code in ('siparis_alindi','siparis_alinmama_nedeni');
+    insert into app_settings (key, value) values ('order_questions_optional_v1', 'true'::jsonb)
+    on conflict (key) do nothing;
+  end if;
+end $$;
 `;

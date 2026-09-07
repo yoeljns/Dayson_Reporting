@@ -5,6 +5,10 @@
  *
  *   SCHEMA_SQL ← 0001_init.sql          (fresh-install schema)
  *   SEED_SQL   ← 0002_seed.sql          (idempotent seed)
+ *   PATCH_PRE_SQL ← NNNN_enums_*.sql   (ALTER TYPE … ADD VALUE only; applied in
+ *                                        its OWN transaction before PATCH_SQL, because
+ *                                        a new enum value cannot be used in the same
+ *                                        transaction that adds it)
  *   PATCH_SQL  ← 0003…latest, in order  (idempotent patches, run every boot)
  *
  * Usage:  node scripts/gen-schema-sql.mjs          # rewrite the file
@@ -33,8 +37,14 @@ const esc = (s) => s.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g
 
 const schema = read(files[0]);
 const seed = read(files[1]);
-const patches = files
-  .slice(2)
+const isEnumFile = (f) => /^\d{4}_enums_.*\.sql$/.test(f);
+const rest = files.slice(2);
+const prePatches = rest
+  .filter(isEnumFile)
+  .map((f) => `-- ────── ${f} ──────\n${read(f)}`)
+  .join("\n\n");
+const patches = rest
+  .filter((f) => !isEnumFile(f))
   .map((f) => `-- ────── ${f} ──────\n${read(f)}`)
   .join("\n\n");
 
@@ -47,6 +57,9 @@ export const SCHEMA_SQL = \`${esc(schema)}
 \`;
 
 export const SEED_SQL = \`${esc(seed)}
+\`;
+
+export const PATCH_PRE_SQL = \`${esc(prePatches)}
 \`;
 
 export const PATCH_SQL = \`${esc(patches)}

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Client } from "pg";
-import { SCHEMA_SQL, SEED_SQL, PATCH_SQL } from "@/lib/schema-sql";
+import { SCHEMA_SQL, SEED_SQL, PATCH_SQL, PATCH_PRE_SQL } from "@/lib/schema-sql";
 
 /**
  * One-time, self-applying database setup. Runs the bundled schema + seed the
@@ -87,7 +87,13 @@ async function runEnsureSchema(): Promise<boolean> {
     // the last successful run: the whole blob (~25KB of DDL) used to replay on
     // every cold start. The recorded hash lives in app_settings; the read
     // fails harmlessly on DBs that predate that table, forcing a full run.
-    const patchHash = createHash("sha256").update(PATCH_SQL).digest("hex");
+    // Both blobs are hashed together: a change to only the enum pre-phase must
+    // still trigger a re-run.
+    const patchHash = createHash("sha256")
+      .update(PATCH_PRE_SQL)
+      .update("\n--\n")
+      .update(PATCH_SQL)
+      .digest("hex");
     let upToDate = false;
     try {
       const { rows: ver } = await client.query(
@@ -98,6 +104,18 @@ async function runEnsureSchema(): Promise<boolean> {
       /* app_settings not there yet → run the patch */
     }
     if (!upToDate) {
+      // Phase 1 — enum additions run in their OWN transaction (own query) so
+      // that phase 2 can already use the new values: Postgres refuses to use an
+      // enum value inside the transaction that added it. The file itself takes
+      // an advisory lock; ADD VALUE IF NOT EXISTS makes replays harmless.
+      if (PATCH_PRE_SQL.trim()) {
+        try {
+          await client.query(PATCH_PRE_SQL);
+        } catch (preErr) {
+          console.error("[bootstrap] Enum yaması uygulanamadı:", preErr);
+          return true; // hash stays stale → retried by the next process
+        }
+      }
       try {
         // Advisory lock serializes concurrent cold starts; the hash upsert is
         // part of the same implicit transaction, so a failed patch never

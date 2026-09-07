@@ -23,11 +23,31 @@ export const DEBT_STATUS_LABELS: Record<DebtStatus, string> = {
   bloke: "Bloke",
 };
 
-export const COMPANY_KINDS = ["distributor", "non_customer"] as const;
+export const COMPANY_KINDS = [
+  "distributor",
+  "non_customer",
+  "sub_dealer",
+  "competitor_point",
+] as const;
 export type CompanyKind = (typeof COMPANY_KINDS)[number];
 export const COMPANY_KIND_LABELS: Record<CompanyKind, string> = {
   distributor: "Bayi / Distribütör",
-  non_customer: "Distribütör Dışı",
+  non_customer: "Potansiyel bayi",
+  sub_dealer: "Alt bayi",
+  competitor_point: "Rakip noktası",
+};
+/** Kinds a salesperson may register from the field (dealers are opened by the office). */
+export const FIELD_REGISTRABLE_KINDS = [
+  "non_customer",
+  "sub_dealer",
+  "competitor_point",
+] as const;
+
+export const ASSIGNMENT_ROLES = ["owner", "backup"] as const;
+export type AssignmentRole = (typeof ASSIGNMENT_ROLES)[number];
+export const ASSIGNMENT_ROLE_LABELS: Record<AssignmentRole, string> = {
+  owner: "Sorumlu",
+  backup: "Yedek",
 };
 
 export const VISIT_TYPES = ["telefon", "yuz_yuze"] as const;
@@ -106,12 +126,76 @@ export const COMPLAINT_PRIORITY_LABELS: Record<number, string> = {
   3: "Düşük",
 };
 
-export const PLAN_STATUSES = ["taslak", "gonderildi"] as const;
+export const PLAN_STATUSES = [
+  "taslak",
+  "gonderildi",
+  "onaylandi",
+  "reddedildi",
+] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
 export const PLAN_STATUS_LABELS: Record<PlanStatus, string> = {
   taslak: "Taslak",
-  gonderildi: "Gönderildi",
+  gonderildi: "Onay bekliyor",
+  onaylandi: "Onaylandı",
+  reddedildi: "Reddedildi",
 };
+export const PLAN_STATUS_BADGE: Record<
+  PlanStatus,
+  "warning" | "default" | "success" | "destructive"
+> = {
+  taslak: "warning",
+  gonderildi: "default",
+  onaylandi: "success",
+  reddedildi: "destructive",
+};
+
+export const SURVEY_STATUSES = ["taslak", "aktif", "kapandi"] as const;
+export type SurveyStatus = (typeof SURVEY_STATUSES)[number];
+export const SURVEY_STATUS_LABELS: Record<SurveyStatus, string> = {
+  taslak: "Taslak",
+  aktif: "Aktif",
+  kapandi: "Kapandı",
+};
+export const SURVEY_INPUT_TYPES = [
+  "boolean",
+  "select",
+  "number",
+  "text",
+  "scale",
+] as const;
+export type SurveyInputType = (typeof SURVEY_INPUT_TYPES)[number];
+export const SURVEY_INPUT_TYPE_LABELS: Record<SurveyInputType, string> = {
+  boolean: "Evet / Hayır",
+  select: "Seçenekli",
+  number: "Sayı",
+  text: "Metin",
+  scale: "Puan (1-5)",
+};
+
+export const TARGET_STATUSES = ["taslak", "mutabik", "iptal"] as const;
+export type TargetStatus = (typeof TARGET_STATUSES)[number];
+export const TARGET_STATUS_LABELS: Record<TargetStatus, string> = {
+  taslak: "Taslak",
+  mutabik: "Mutabık",
+  iptal: "İptal",
+};
+export const PACE_LABELS = {
+  onde: "Önde",
+  yolunda: "Yolunda",
+  geride: "Geride",
+} as const;
+export type Pace = keyof typeof PACE_LABELS;
+
+export const DOCUMENT_REF_TABLES = [
+  "visit",
+  "complaint",
+  "competitor_observation",
+  "stock_count",
+] as const;
+export type DocumentRefTable = (typeof DOCUMENT_REF_TABLES)[number];
+export const PHOTO_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+export const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
+export const PHOTO_BUCKET = "field-photos";
 
 export const SUPPLY_KINDS = ["brand", "own_production", "export"] as const;
 export type SupplyKind = (typeof SUPPLY_KINDS)[number];
