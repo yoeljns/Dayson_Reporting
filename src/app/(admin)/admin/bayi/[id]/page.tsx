@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireManager } from "@/lib/auth";
 import { CompanyNav } from "@/components/company-nav";
-import { companyNeighbours, listQueryString, withQuery } from "@/lib/companies/list";
+import { companyNeighbours, hasListParams as hasListParamsIn, listQueryString, parseListParams, withQuery } from "@/lib/companies/list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { VisitRecord, type VisitRecordProduct } from "@/components/visit-record";
@@ -58,7 +58,7 @@ export default async function DealerFilePage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { q?: string; tur?: string; atama?: string };
+  searchParams: Record<string, string | undefined>;
 }) {
   await requireManager();
   const supabase = createClient();
@@ -280,10 +280,8 @@ export default async function DealerFilePage({
   }
 
   // Önceki / Sıradaki in the order of the list the manager came from.
-  const hasListParams = searchParams.q != null || searchParams.tur != null || searchParams.atama != null;
-  const listParams = hasListParams
-    ? { q: searchParams.q, tur: searchParams.tur, atama: searchParams.atama }
-    : { tur: company.kind as string };
+  const hasListParams = hasListParamsIn(searchParams);
+  const listParams = hasListParams ? parseListParams(searchParams) : { tur: company.kind as string };
   const navQs = hasListParams ? listQueryString(listParams) : "";
   const neighbours = await companyNeighbours(createAdminClient(), listParams, companyId, 500);
 

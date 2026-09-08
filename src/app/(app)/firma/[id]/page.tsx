@@ -62,7 +62,7 @@ export default async function CompanyCardPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { tab?: string; q?: string; tur?: string };
+  searchParams: { tab?: string; q?: string; tur?: string; sirala?: string };
 }) {
   const profile = await requireProfile();
   const supabase = createClient();
@@ -92,8 +92,10 @@ export default async function CompanyCardPage({
 
   // Önceki / Sıradaki: the list the rep came from (params carried on the
   // link); without params, same-kind companies alphabetically.
-  const hasListParams = searchParams.q != null || searchParams.tur != null;
-  const listParams = hasListParams ? { q: searchParams.q, tur: searchParams.tur } : { tur: kind };
+  const hasListParams = searchParams.q != null || searchParams.tur != null || searchParams.sirala != null;
+  const listParams = hasListParams
+    ? { q: searchParams.q, tur: searchParams.tur, sirala: searchParams.sirala }
+    : { tur: kind };
   const navQs = hasListParams ? listQueryString(listParams) : "";
   const neighbours = await companyNeighbours(supabase, listParams, company.id, 200);
   const tabQs = tab !== "ozet" ? `tab=${tab}` : "";
@@ -398,7 +400,7 @@ async function TargetTab({
       <Card>
         <CardContent className="pt-4">
           <div className="section-label mb-2">{year} hedefi</div>
-          <TargetView status={status} target={target} compact />
+          <TargetView status={status} target={target} compact showEur={false} />
         </CardContent>
       </Card>
       {canPropose && (

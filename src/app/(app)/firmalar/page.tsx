@@ -7,27 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatTRDate, daysSince } from "@/lib/week";
-import { listQueryString, withQuery } from "@/lib/companies/list";
+import { COMPANY_SORTS, listCompanies, listQueryString, parseSort, withQuery } from "@/lib/companies/list";
 import {
   COMPANY_KINDS,
   COMPANY_KIND_LABELS,
   type CompanyKind,
 } from "@/lib/enums";
 
-type Row = {
-  id: string;
-  name: string;
-  kind: CompanyKind;
-  city: string | null;
-  plate_code: string | null;
-  segment: string | null;
-  logo_code: string | null;
-};
-
 export default async function CompaniesPage({
   searchParams,
 }: {
-  searchParams: { q?: string; tur?: string };
+  searchParams: { q?: string; tur?: string; sirala?: string };
 }) {
   await requireProfile();
   const supabase = createClient();
@@ -35,33 +25,13 @@ export default async function CompaniesPage({
   const kind = (COMPANY_KINDS as readonly string[]).includes(searchParams.tur ?? "")
     ? (searchParams.tur as CompanyKind)
     : null;
+  const sort = parseSort(searchParams.sirala);
 
-  let query = supabase
-    .from("companies")
-    .select("id, name, kind, city, plate_code, segment, logo_code")
-    .is("deleted_at", null)
-    .order("name")
-    .limit(200);
-  if (kind) query = query.eq("kind", kind);
-  if (q) query = query.ilike("name", `%${q}%`);
-  const { data } = await query;
-  const rows = (data as Row[] | null) ?? [];
+  const rows = await listCompanies(supabase, { q, tur: kind, sirala: sort }, 200);
 
-  const { data: lv } =
-    rows.length > 0
-      ? await supabase
-          .from("company_last_visit")
-          .select("company_id, last_visit_date")
-          .in("company_id", rows.map((r) => r.id))
-      : { data: [] as { company_id: string; last_visit_date: string | null }[] };
-  const lastMap = new Map((lv ?? []).map((r) => [r.company_id, r.last_visit_date as string | null]));
-
-  const navQs = listQueryString({ q, tur: kind });
-  const href = (k: CompanyKind | null) =>
-    `/firmalar?${new URLSearchParams({
-      ...(q ? { q } : {}),
-      ...(k ? { tur: k } : {}),
-    }).toString()}`;
+  const navQs = listQueryString({ q, tur: kind, sirala: sort });
+  const href = (k: CompanyKind | null) => withQuery("/firmalar", listQueryString({ q, tur: k, sirala: sort }));
+  const sortHref = (s: string) => withQuery("/firmalar", listQueryString({ q, tur: kind, sirala: s }));
 
   return (
     <div className="mx-auto max-w-md space-y-4">
@@ -77,6 +47,7 @@ export default async function CompaniesPage({
       <form className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         {kind && <input type="hidden" name="tur" value={kind} />}
+        {sort !== "ad" && <input type="hidden" name="sirala" value={sort} />}
         <input
           name="q"
           defaultValue={q}
@@ -108,6 +79,21 @@ export default async function CompaniesPage({
           </Link>
         ))}
       </div>
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="text-muted-foreground">Sıralama:</span>
+        {COMPANY_SORTS.map((s) => (
+          <Link
+            key={s.key}
+            href={sortHref(s.key)}
+            className={cn(
+              "rounded-full border px-2 py-0.5",
+              sort === s.key ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent"
+            )}
+          >
+            {s.label}
+          </Link>
+        ))}
+      </div>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
@@ -126,7 +112,7 @@ export default async function CompaniesPage({
           </p>
         ) : (
           rows.map((r) => {
-            const last = lastMap.get(r.id) ?? null;
+            const last = r.lastVisit;
             const d = daysSince(last);
             return (
               <Link key={r.id} href={withQuery(`/firma/${r.id}`, navQs)}>

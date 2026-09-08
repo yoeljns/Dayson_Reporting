@@ -5,91 +5,89 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AssignmentEditor } from "@/components/assignment-editor";
-import { CompanyRowEditor, type CompanyRowData } from "@/components/company-row-editor";
-import { groupAssignments } from "@/lib/assignments";
+import { CompanyRowEditor } from "@/components/company-row-editor";
+import { CompanyFilterBar } from "@/components/company-filter-bar";
 import { cn } from "@/lib/utils";
 import { formatTRDate, daysSince } from "@/lib/week";
-import { listQueryString, withQuery } from "@/lib/companies/list";
 import {
-  COMPANY_KINDS,
-  COMPANY_KIND_LABELS,
-  type CompanyKind,
-} from "@/lib/enums";
-
-type Row = CompanyRowData & {
-  logo_code: string | null;
-  created_by: string | null;
-  created_at: string;
-  buys_from: { name: string } | { name: string }[] | null;
-};
+  COMPANY_SORTS,
+  VISIT_AGES,
+  listCompanies,
+  listQueryString,
+  parseKind,
+  parseListParams,
+  parseSegment,
+  parseSort,
+  parseVisitAge,
+  withQuery,
+  type CompanyListParams,
+} from "@/lib/companies/list";
+import { COMPANY_KINDS, COMPANY_KIND_LABELS, SEGMENTS } from "@/lib/enums";
 
 export default async function AdminCompaniesPage({
   searchParams,
 }: {
-  searchParams: { q?: string; tur?: string; atama?: string };
+  searchParams: Record<string, string | undefined>;
 }) {
   await requireManager();
   const admin = createAdminClient();
-  const q = (searchParams.q ?? "").trim();
-  const kind = (COMPANY_KINDS as readonly string[]).includes(searchParams.tur ?? "")
-    ? (searchParams.tur as CompanyKind)
-    : null;
-  const unassignedOnly = searchParams.atama === "yok";
+  const params = parseListParams(searchParams);
+  const kind = parseKind(params.tur);
+  const unassignedOnly = params.atama === "yok";
+  const segment = parseSegment(params.segment);
+  const visitAge = parseVisitAge(params.ziyaret);
+  const sort = parseSort(params.sirala);
 
-  let query = admin
-    .from("companies")
-    .select(
-      "id, name, kind, city, plate_code, phone, logo_code, buys_from_company_id, created_by, created_at, buys_from:buys_from_company_id(name)"
-    )
-    .is("deleted_at", null)
-    .order("name")
-    .limit(500);
-  if (kind) query = query.eq("kind", kind);
-  if (q) query = query.ilike("name", `%${q}%`);
-
-  const [{ data }, { data: assignments }, { data: profiles }, { data: counts }] =
-    await Promise.all([
-      query,
-      admin.from("assignments").select("company_id, salesperson_id, role"),
-      admin.from("profiles").select("id, full_name, role, is_active"),
-      admin.from("companies").select("kind").is("deleted_at", null),
-    ]);
-  const assignMap = groupAssignments(assignments);
+  const [rows, { data: profiles }, { data: all }] = await Promise.all([
+    listCompanies(admin, params, 500),
+    admin.from("profiles").select("id, full_name, role, is_active"),
+    admin.from("companies").select("kind, plate_code, city").is("deleted_at", null),
+  ]);
   const salespeople = ((profiles as { id: string; full_name: string; role: string; is_active: boolean }[] | null) ?? [])
     .filter((p) => p.role === "salesperson" && p.is_active)
     .sort((a, b) => a.full_name.localeCompare(b.full_name, "tr"));
   const nameOf = new Map(((profiles as { id: string; full_name: string }[] | null) ?? []).map((p) => [p.id, p.full_name]));
 
-  let rows = ((data as unknown as Row[] | null) ?? []).map((r) => ({
-    ...r,
-    buysFromName: (Array.isArray(r.buys_from) ? r.buys_from[0] : r.buys_from)?.name ?? null,
-    reps: assignMap.get(r.id),
-  }));
-  if (unassignedOnly) rows = rows.filter((r) => !r.reps || (!r.reps.owner && r.reps.backups.length === 0));
-
-  const { data: lv } =
-    rows.length > 0
-      ? await admin
-          .from("company_last_visit")
-          .select("company_id, last_visit_date")
-          .in("company_id", rows.map((r) => r.id))
-      : { data: [] as { company_id: string; last_visit_date: string | null }[] };
-  const lastMap = new Map((lv ?? []).map((r) => [r.company_id, r.last_visit_date as string | null]));
-
+  // Kind counts + region options (plate → most common city; cities without a plate).
   const kindCounts = new Map<string, number>();
-  for (const c of counts ?? []) kindCounts.set(c.kind, (kindCounts.get(c.kind) ?? 0) + 1);
+  const plateCity = new Map<string, Map<string, number>>();
+  const cityOnly = new Map<string, number>();
+  for (const c of (all as { kind: string; plate_code: string | null; city: string | null }[] | null) ?? []) {
+    kindCounts.set(c.kind, (kindCounts.get(c.kind) ?? 0) + 1);
+    if (c.plate_code) {
+      const m = plateCity.get(c.plate_code) ?? plateCity.set(c.plate_code, new Map()).get(c.plate_code)!;
+      const city = (c.city ?? "").trim();
+      m.set(city, (m.get(city) ?? 0) + 1);
+    } else if (c.city?.trim()) {
+      const city = c.city.trim();
+      cityOnly.set(city, (cityOnly.get(city) ?? 0) + 1);
+    }
+  }
+  const regions = [
+    ...Array.from(plateCity.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([plate, cities]) => {
+        const city = Array.from(cities.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+        const n = Array.from(cities.values()).reduce((a, b) => a + b, 0);
+        return { value: plate, label: `${plate} ${city}`.trim() + ` (${n})` };
+      }),
+    ...Array.from(cityOnly.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], "tr"))
+      .map(([city, n]) => ({ value: city, label: `${city} (${n})` })),
+  ];
 
-  const navQs = listQueryString({ q, tur: kind, atama: unassignedOnly ? "yok" : null });
-  const href = (next: { tur?: CompanyKind | null; atama?: boolean }) => {
-    const sp = new URLSearchParams();
-    if (q) sp.set("q", q);
-    const k = next.tur === undefined ? kind : next.tur;
-    if (k) sp.set("tur", k);
-    const a = next.atama === undefined ? unassignedOnly : next.atama;
-    if (a) sp.set("atama", "yok");
-    const s = sp.toString();
-    return s ? `/admin/firmalar?${s}` : "/admin/firmalar";
-  };
+  const href = (patch: Partial<CompanyListParams>) =>
+    withQuery("/admin/firmalar", listQueryString({ ...params, ...patch }));
+  const navQs = listQueryString(params);
+  const activeFilters = [
+    params.sp ? `pazarlamacı: ${nameOf.get(params.sp) ?? "?"}` : null,
+    params.bolge ? `bölge: ${params.bolge}` : null,
+    segment ? `segment ${segment}` : null,
+    visitAge ? `son ziyaret ${VISIT_AGES.find((a) => a.key === visitAge)?.label}` : null,
+    unassignedOnly ? "atanmamış" : null,
+    kind ? COMPANY_KIND_LABELS[kind] : null,
+    params.q ? `"${params.q}"` : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="space-y-4">
@@ -109,41 +107,61 @@ export default async function AdminCompaniesPage({
         </Link>
       </div>
 
-      <form className="flex gap-2">
-        {kind && <input type="hidden" name="tur" value={kind} />}
-        {unassignedOnly && <input type="hidden" name="atama" value="yok" />}
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Firma ara…"
-          className="h-9 w-full max-w-sm rounded-md border bg-background px-3 text-sm"
-        />
-        <Button type="submit" variant="secondary" size="sm">
-          Ara
-        </Button>
-      </form>
+      <CompanyFilterBar
+        salespeople={salespeople}
+        regions={regions}
+        initial={{ q: params.q ?? "", sp: params.sp ?? "", bolge: params.bolge ?? "", sirala: sort }}
+      />
 
       <div className="flex flex-wrap gap-2">
         <Chip href={href({ tur: null })} active={!kind}>
-          Tümü ({counts?.length ?? 0})
+          Tümü ({all?.length ?? 0})
         </Chip>
         {COMPANY_KINDS.map((k) => (
           <Chip key={k} href={href({ tur: k })} active={kind === k}>
             {COMPANY_KIND_LABELS[k]} ({kindCounts.get(k) ?? 0})
           </Chip>
         ))}
-        <Chip href={href({ atama: !unassignedOnly })} active={unassignedOnly}>
+        <Chip href={href({ atama: unassignedOnly ? null : "yok" })} active={unassignedOnly}>
           Atanmamış
         </Chip>
       </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Segment:</span>
+        {SEGMENTS.map((s) => (
+          <Chip key={s} href={href({ segment: segment === s ? null : s })} active={segment === s} small>
+            {s}
+          </Chip>
+        ))}
+        <span className="ml-2 text-muted-foreground">Son ziyaret:</span>
+        {VISIT_AGES.map((a) => (
+          <Chip key={a.key} href={href({ ziyaret: visitAge === a.key ? null : a.key })} active={visitAge === a.key} small>
+            {a.label}
+          </Chip>
+        ))}
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        {rows.length} firma
+        {activeFilters.length > 0 ? ` · ${activeFilters.join(" · ")}` : ""}
+        {" · sıralama: "}
+        {COMPANY_SORTS.find((s) => s.key === sort)?.label.toLocaleLowerCase("tr")}
+        {activeFilters.length > 0 && (
+          <>
+            {" · "}
+            <Link href={withQuery("/admin/firmalar", listQueryString({ sirala: sort }))} className="underline">
+              Süzgeçleri temizle
+            </Link>
+          </>
+        )}
+      </p>
 
       <div className="space-y-2">
         {rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">Firma bulunamadı.</p>
         ) : (
           rows.map((r) => {
-            const last = lastMap.get(r.id) ?? null;
-            const d = daysSince(last);
+            const d = daysSince(r.lastVisit);
             return (
               <Card key={r.id}>
                 <CardContent className="flex flex-wrap items-start justify-between gap-3 p-3">
@@ -153,6 +171,7 @@ export default async function AdminCompaniesPage({
                         {r.name}
                       </Link>
                       <Badge variant="outline">{COMPANY_KIND_LABELS[r.kind]}</Badge>
+                      {r.segment && <Badge variant="secondary">Segment {r.segment}</Badge>}
                       {r.kind !== "distributor" && r.created_by && (
                         <span className="text-xs text-muted-foreground">
                           sahadan · {nameOf.get(r.created_by) ?? "—"} · {formatTRDate(r.created_at.slice(0, 10))}
@@ -165,7 +184,9 @@ export default async function AdminCompaniesPage({
                         .join(" · ") || "—"}
                       {r.buysFromName ? ` · ${r.buysFromName} üzerinden alıyor` : ""}
                       {" · "}
-                      {last ? `son ziyaret ${formatTRDate(last)}${d != null ? ` (${d} gün)` : ""}` : "hiç ziyaret yok"}
+                      {r.lastVisit
+                        ? `son ziyaret ${formatTRDate(r.lastVisit)}${d != null ? ` (${d} gün)` : ""}`
+                        : "hiç ziyaret yok"}
                     </div>
                     <div className="mt-1.5">
                       <AssignmentEditor
@@ -202,12 +223,23 @@ export default async function AdminCompaniesPage({
   );
 }
 
-function Chip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+function Chip({
+  href,
+  active,
+  small = false,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  small?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       href={href}
       className={cn(
-        "rounded-full border px-3 py-1 text-sm",
+        "rounded-full border",
+        small ? "px-2 py-0.5 text-xs" : "px-3 py-1 text-sm",
         active ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent"
       )}
     >

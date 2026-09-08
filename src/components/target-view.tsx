@@ -26,12 +26,15 @@ export function TargetView({
   status,
   target,
   compact = false,
+  showEur = true,
   revisions,
   categories,
 }: {
   status: TargetStatus;
   target: { status: TargetStatusKey; agreed_at: string | null; note: string | null } | null;
   compact?: boolean;
+  /** Shipped € total — hidden on salesperson screens. */
+  showEur?: boolean;
   revisions?: TargetRevisionView[];
   /** Needed to label revision entries (keyed by category code). */
   categories?: SalesCategory[];
@@ -78,10 +81,16 @@ export function TargetView({
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Sevk edilen toplam: <span className="font-medium text-foreground">{fmtEur(status.eur)}</span>
-        {current != null ? ` · bu ay: ${MONTHS_TR_SHORT[current]}` : ""}
-      </p>
+      {(showEur || current != null) && (
+        <p className="text-xs text-muted-foreground">
+          {showEur && (
+            <>
+              Sevk edilen toplam: <span className="font-medium text-foreground">{fmtEur(status.eur)}</span>
+            </>
+          )}
+          {current != null ? `${showEur ? " · " : ""}bu ay: ${MONTHS_TR_SHORT[current]}` : ""}
+        </p>
+      )}
       {target?.note && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{target.note}</p>}
       {!compact && revisions && revisions.length > 0 && (
         <RevisionList revisions={revisions} categories={categories ?? []} />
