@@ -9,6 +9,7 @@ import { CompanyRowEditor, type CompanyRowData } from "@/components/company-row-
 import { groupAssignments } from "@/lib/assignments";
 import { cn } from "@/lib/utils";
 import { formatTRDate, daysSince } from "@/lib/week";
+import { listQueryString, withQuery } from "@/lib/companies/list";
 import {
   COMPANY_KINDS,
   COMPANY_KIND_LABELS,
@@ -78,6 +79,7 @@ export default async function AdminCompaniesPage({
   const kindCounts = new Map<string, number>();
   for (const c of counts ?? []) kindCounts.set(c.kind, (kindCounts.get(c.kind) ?? 0) + 1);
 
+  const navQs = listQueryString({ q, tur: kind, atama: unassignedOnly ? "yok" : null });
   const href = (next: { tur?: CompanyKind | null; atama?: boolean }) => {
     const sp = new URLSearchParams();
     if (q) sp.set("q", q);
@@ -147,7 +149,7 @@ export default async function AdminCompaniesPage({
                 <CardContent className="flex flex-wrap items-start justify-between gap-3 p-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <Link href={`/admin/bayi/${r.id}`} className="font-medium hover:underline">
+                      <Link href={withQuery(`/admin/bayi/${r.id}`, navQs)} className="font-medium hover:underline">
                         {r.name}
                       </Link>
                       <Badge variant="outline">{COMPANY_KIND_LABELS[r.kind]}</Badge>

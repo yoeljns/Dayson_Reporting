@@ -5,7 +5,8 @@ import type { SheetRow } from "@/lib/reports/sheet";
 import type { BuildResult, BuildOpts } from "@/lib/reports/builders";
 import { countedSkus, latestCounts } from "@/lib/stock/server";
 import { targetsForYear } from "@/lib/targets/server";
-import { elapsedFractionOfYear, paceOf, sumLines } from "@/lib/rules/target";
+import { buildTargetStatus, MONTHS_TR_SHORT } from "@/lib/rules/target";
+import { loadSalesCategories, shipmentTotalsForYear } from "@/lib/sales/server";
 import { getPaceThresholds } from "@/lib/settings";
 import { formatSurveyAnswer } from "@/lib/rules/survey";
 import { PACE_LABELS, TARGET_STATUS_LABELS, COMPANY_KIND_LABELS, type CompanyKind } from "@/lib/enums";
@@ -145,13 +146,13 @@ export const buildAnket: Builder = async (supabase, f, opts) => {
 };
 
 // ---------------------------------------------------------------------------
-// Hedefler — dealer × category targets with pace
+// Hedefler — dealer × sales category quantity targets vs. shipments
 // ---------------------------------------------------------------------------
 export const buildHedef: Builder = async (supabase, f, opts) => {
   const max = opts?.limit ?? ROW_CAP;
   const today = todayIso();
   const year = Number(f.year) || Number(today.slice(0, 4));
-  const [targets, thresholds, { data: dealers }, { data: cats }] = await Promise.all([
+  const [targets, thresholds, { data: dealers }, categories, shipments] = await Promise.all([
     targetsForYear(supabase, year),
     getPaceThresholds(),
     supabase
@@ -161,10 +162,9 @@ export const buildHedef: Builder = async (supabase, f, opts) => {
       .is("deleted_at", null)
       .order("name")
       .limit(5000),
-    supabase.from("product_categories").select("id, label_tr").order("sort_order"),
+    loadSalesCategories(supabase),
+    shipmentTotalsForYear(supabase, year),
   ]);
-  const catName = new Map((cats ?? []).map((c) => [c.id, c.label_tr]));
-  const elapsed = elapsedFractionOfYear(year, today);
 
   const headers = [
     "Bayi",
@@ -173,51 +173,66 @@ export const buildHedef: Builder = async (supabase, f, opts) => {
     "Yıl",
     "Durum",
     "Kategori",
-    "Hedef Koli",
-    "Hedef €",
-    "Gerçekleşen Koli",
-    "Gerçekleşen €",
+    "Birim",
+    "Hedef",
+    "Sevk",
+    "Kalan",
     "Gerçekleşme %",
     "Tempo",
   ];
   const rows: SheetRow[] = [];
   for (const d of (dealers ?? []) as { id: string; name: string; logo_code: string | null; city: string | null }[]) {
-    const t = targets.get(d.id);
-    if (!t) continue;
+    const t = targets.get(d.id) ?? null;
+    const ship = shipments.get(d.id) ?? null;
+    if (!t && !ship) continue;
+    const st = buildTargetStatus(t?.lines ?? [], categories, ship, year, today, thresholds);
+    if (st.lines.length === 0) continue;
     const base = {
       Bayi: d.name,
       "Logo Kodu": d.logo_code ?? "",
       Şehir: d.city ?? "",
       Yıl: year,
-      Durum: TARGET_STATUS_LABELS[t.status],
+      Durum: t ? TARGET_STATUS_LABELS[t.status] : "Hedef yok",
     };
-    for (const l of t.lines) {
-      const p = paceOf(Number(l.actual_eur), Number(l.target_eur), elapsed, thresholds);
+    const round = (n: number) => Math.round(n * 10) / 10;
+    for (const l of st.lines) {
       rows.push({
         ...base,
-        Kategori: catName.get(l.category_id) ?? "",
-        "Hedef Koli": l.target_qty,
-        "Hedef €": Number(l.target_eur),
-        "Gerçekleşen Koli": l.actual_qty,
-        "Gerçekleşen €": Number(l.actual_eur),
-        "Gerçekleşme %": p.ratio == null ? null : Math.round(p.ratio * 100),
-        Tempo: p.pace ? PACE_LABELS[p.pace] : "",
+        Kategori: l.category.label_tr,
+        Birim: l.category.unit,
+        Hedef: round(l.target),
+        Sevk: round(l.shipped),
+        Kalan: l.target > 0 ? round(l.remaining) : null,
+        "Gerçekleşme %": l.pace.ratio == null ? null : Math.round(l.pace.ratio * 100),
+        Tempo: l.pace.pace ? PACE_LABELS[l.pace.pace] : "",
       });
+      if (l.monthly) {
+        for (let i = 0; i < 12; i++) {
+          if (!l.monthly[i] && !l.byMonth[i]) continue;
+          rows.push({
+            ...base,
+            Kategori: `${l.category.label_tr} · ${MONTHS_TR_SHORT[i]}`,
+            Birim: l.category.unit,
+            Hedef: round(l.monthly[i]),
+            Sevk: round(l.byMonth[i]),
+            Kalan: round(Math.max(0, l.monthly[i] - l.byMonth[i])),
+            "Gerçekleşme %": l.monthly[i] > 0 ? Math.round((l.byMonth[i] / l.monthly[i]) * 100) : null,
+            Tempo: "",
+          });
+        }
+      }
     }
-    const tot = sumLines(t.lines);
-    const p = paceOf(tot.actual_eur, tot.target_eur, elapsed, thresholds);
     rows.push({
       ...base,
-      Kategori: "TOPLAM",
-      "Hedef Koli": tot.target_qty,
-      "Hedef €": tot.target_eur,
-      "Gerçekleşen Koli": tot.actual_qty,
-      "Gerçekleşen €": tot.actual_eur,
-      "Gerçekleşme %": p.ratio == null ? null : Math.round(p.ratio * 100),
-      Tempo: p.pace ? PACE_LABELS[p.pace] : "",
+      Kategori: "SEVK EDİLEN €",
+      Birim: "€",
+      Hedef: null,
+      Sevk: Math.round(st.eur * 100) / 100,
+      Kalan: null,
+      "Gerçekleşme %": null,
+      Tempo: st.pace ? PACE_LABELS[st.pace] : "",
     });
     if (rows.length >= max) break;
   }
   return { sheetName: `Hedefler ${year}`, headers, rows: rows.slice(0, max), capped: rows.length > max };
 };
-

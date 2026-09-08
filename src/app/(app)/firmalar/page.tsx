@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatTRDate, daysSince } from "@/lib/week";
+import { listQueryString, withQuery } from "@/lib/companies/list";
 import {
   COMPANY_KINDS,
   COMPANY_KIND_LABELS,
@@ -55,6 +56,7 @@ export default async function CompaniesPage({
       : { data: [] as { company_id: string; last_visit_date: string | null }[] };
   const lastMap = new Map((lv ?? []).map((r) => [r.company_id, r.last_visit_date as string | null]));
 
+  const navQs = listQueryString({ q, tur: kind });
   const href = (k: CompanyKind | null) =>
     `/firmalar?${new URLSearchParams({
       ...(q ? { q } : {}),
@@ -127,7 +129,7 @@ export default async function CompaniesPage({
             const last = lastMap.get(r.id) ?? null;
             const d = daysSince(last);
             return (
-              <Link key={r.id} href={`/firma/${r.id}`}>
+              <Link key={r.id} href={withQuery(`/firma/${r.id}`, navQs)}>
                 <Card className="hover:bg-accent">
                   <CardContent className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">

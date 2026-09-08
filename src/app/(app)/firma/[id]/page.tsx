@@ -16,10 +16,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { VisitRecord } from "@/components/visit-record";
+import { CompanyNav } from "@/components/company-nav";
+import { companyNeighbours, listQueryString, withQuery } from "@/lib/companies/list";
 import { TargetView } from "@/components/target-view";
 import { StockHistory } from "@/components/stock-history";
 import { getTargetFor } from "@/lib/targets/server";
-import { elapsedFractionOfYear } from "@/lib/rules/target";
+import { buildTargetStatus } from "@/lib/rules/target";
+import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
 import { getPaceThresholds } from "@/lib/settings";
 import { countedSkus, companyCountHistory } from "@/lib/stock/server";
 import { surveyMatches } from "@/lib/rules/survey";
@@ -58,7 +61,7 @@ export default async function CompanyCardPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { tab?: string };
+  searchParams: { tab?: string; q?: string; tur?: string };
 }) {
   const profile = await requireProfile();
   const supabase = createClient();
@@ -85,6 +88,14 @@ export default async function CompanyCardPage({
     ...(isDealer ? [{ key: "stok", label: "Stok" }] : []),
   ];
   const tab = tabs.some((t) => t.key === searchParams.tab) ? searchParams.tab! : "ozet";
+
+  // Önceki / Sıradaki: the list the rep came from (params carried on the
+  // link); without params, same-kind companies alphabetically.
+  const hasListParams = searchParams.q != null || searchParams.tur != null;
+  const listParams = hasListParams ? { q: searchParams.q, tur: searchParams.tur } : { tur: kind };
+  const navQs = hasListParams ? listQueryString(listParams) : "";
+  const neighbours = await companyNeighbours(supabase, listParams, company.id, 200);
+  const tabQs = tab !== "ozet" ? `tab=${tab}` : "";
 
   const [{ data: visitsRaw }, { data: contacts }, { data: complaints }, { data: activeSurveys }] =
     await Promise.all([
@@ -125,16 +136,26 @@ export default async function CompanyCardPage({
   );
 
   const q = `company=${company.id}`;
-  const hrefFor = (k: string) => `/firma/${company.id}?tab=${k}`;
+  const hrefFor = (k: string) => withQuery(`/firma/${company.id}`, `tab=${k}`, navQs);
 
   return (
     <div className="mx-auto max-w-md space-y-4">
       <Link
-        href="/firmalar"
+        href={withQuery("/firmalar", navQs)}
         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" /> Firmalar
       </Link>
+      {neighbours && (
+        <CompanyNav
+          prevHref={neighbours.prev ? withQuery(`/firma/${neighbours.prev.id}`, tabQs, navQs) : null}
+          prevName={neighbours.prev?.name ?? null}
+          nextHref={neighbours.next ? withQuery(`/firma/${neighbours.next.id}`, tabQs, navQs) : null}
+          nextName={neighbours.next?.name ?? null}
+          index={neighbours.index}
+          total={neighbours.total}
+        />
+      )}
 
       <div>
         <h1 className="text-xl font-semibold">{company.name}</h1>
@@ -348,22 +369,18 @@ async function TargetTab({ companyId }: { companyId: string }) {
   const supabase = createClient();
   const today = todayIso();
   const year = Number(today.slice(0, 4));
-  const [target, thresholds, { data: cats }] = await Promise.all([
+  const [target, thresholds, categories, shipments] = await Promise.all([
     getTargetFor(supabase, companyId, year),
     getPaceThresholds(),
-    supabase.from("product_categories").select("id, label_tr").order("sort_order"),
+    loadSalesCategories(supabase),
+    shipmentTotalsFor(supabase, companyId, year),
   ]);
+  const status = buildTargetStatus(target?.lines ?? [], categories, shipments, year, today, thresholds);
   return (
     <Card>
       <CardContent className="pt-4">
         <div className="section-label mb-2">{year} hedefi</div>
-        <TargetView
-          target={target}
-          categories={(cats as { id: string; label_tr: string }[] | null) ?? []}
-          elapsed={elapsedFractionOfYear(year, today)}
-          thresholds={thresholds}
-          compact
-        />
+        <TargetView status={status} target={target} compact />
       </CardContent>
     </Card>
   );

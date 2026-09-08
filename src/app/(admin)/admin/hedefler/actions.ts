@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { TARGET_STATUSES, type TargetStatus } from "@/lib/enums";
+import { normalizeMonthly } from "@/lib/rules/target";
 
 function revalidate(companyId: string, year: number) {
   revalidatePath("/admin/hedefler");
@@ -48,42 +49,76 @@ export async function ensureTarget(input: {
   return { id: data.id };
 }
 
-/** Replace all category lines (target + manual actuals). */
+type Snapshot = Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+
+const sameMonthly = (a: number[] | null, b: number[] | null) =>
+  (a == null && b == null) || (a != null && b != null && a.every((v, i) => v === b[i]));
+
+/**
+ * Replace the quantity targets per sales category. Actuals come from
+ * shipments, so only targets are written. When anything changed a revision
+ * (before/after + reason) is recorded so the change stays visible.
+ */
 export async function saveTargetLines(input: {
   targetId: string | null;
   companyId: string;
   year: number;
   note?: string | null;
-  lines: {
-    categoryId: string;
-    targetQty: number;
-    targetEur: number;
-    actualQty: number;
-    actualEur: number;
-  }[];
-}): Promise<{ ok?: boolean; error?: string }> {
-  await requireManager();
+  reason?: string | null;
+  lines: { salesCategoryId: string; targetQty: number; monthly?: number[] | null }[];
+}): Promise<{ ok?: boolean; changed?: boolean; error?: string }> {
+  const profile = await requireManager();
   const supabase = createClient();
   const ensured = input.targetId
     ? { id: input.targetId }
     : await ensureTarget({ companyId: input.companyId, year: input.year });
   if (ensured.error || !ensured.id) return { error: ensured.error ?? "Hedef açılamadı." };
   const targetId = ensured.id;
+
+  const { data: cats } = await supabase.from("sales_categories").select("id, code, monthly");
+  const catById = new Map(
+    ((cats as { id: string; code: string; monthly: boolean }[] | null) ?? []).map((c) => [c.id, c])
+  );
+  const { data: existing } = await supabase
+    .from("dealer_target_lines")
+    .select("sales_category_id, target_qty, monthly_qty")
+    .eq("target_id", targetId)
+    .not("sales_category_id", "is", null);
+
+  const before: Snapshot = {};
+  for (const l of (existing as { sales_category_id: string; target_qty: number; monthly_qty: unknown }[] | null) ?? []) {
+    const c = catById.get(l.sales_category_id);
+    if (!c) continue;
+    before[c.code] = {
+      target_qty: Number(l.target_qty) || 0,
+      monthly_qty: c.monthly ? normalizeMonthly(l.monthly_qty) : null,
+    };
+  }
+
   const clean = (n: unknown) => {
     const x = Number(n);
-    return Number.isFinite(x) && x >= 0 ? x : 0;
+    return Number.isFinite(x) && x >= 0 ? Math.round(x * 10) / 10 : 0;
   };
+  const after: Snapshot = { ...before };
+  let changed = false;
   for (const l of input.lines) {
+    const c = catById.get(l.salesCategoryId);
+    if (!c) return { error: "Geçersiz kategori." };
+    const monthly = c.monthly ? normalizeMonthly(l.monthly).map(clean) : null;
+    const targetQty = monthly ? monthly.reduce((a, b) => a + b, 0) : clean(l.targetQty);
+    const prev = before[c.code];
+    if (!prev ? targetQty > 0 || (monthly?.some((v) => v > 0) ?? false) : prev.target_qty !== targetQty || !sameMonthly(prev.monthly_qty, monthly))
+      changed = true;
+    after[c.code] = { target_qty: targetQty, monthly_qty: monthly };
     const { error } = await supabase.from("dealer_target_lines").upsert(
       {
         target_id: targetId,
-        category_id: l.categoryId,
-        target_qty: Math.round(clean(l.targetQty)),
-        target_eur: Math.round(clean(l.targetEur) * 100) / 100,
-        actual_qty: Math.round(clean(l.actualQty)),
-        actual_eur: Math.round(clean(l.actualEur) * 100) / 100,
+        sales_category_id: c.id,
+        category_id: null,
+        target_qty: targetQty,
+        monthly_qty: monthly,
       },
-      { onConflict: "target_id,category_id" }
+      { onConflict: "target_id,sales_category_id" }
     );
     if (error) return { error: error.message };
   }
@@ -92,8 +127,18 @@ export async function saveTargetLines(input: {
     .update({ note: input.note?.trim() || null, updated_at: new Date().toISOString() })
     .eq("id", targetId);
   if (error) return { error: error.message };
+
+  if (changed) {
+    await supabase.from("dealer_target_revisions").insert({
+      target_id: targetId,
+      changed_by: profile.id,
+      reason: input.reason?.trim() || null,
+      before,
+      after,
+    });
+  }
   revalidate(input.companyId, input.year);
-  return { ok: true };
+  return { ok: true, changed };
 }
 
 /** Draft → Mutabık (with date + contact) / İptal, or back to draft. */

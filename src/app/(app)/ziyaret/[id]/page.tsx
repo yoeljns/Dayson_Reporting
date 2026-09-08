@@ -26,7 +26,8 @@ import { visitCode } from "@/lib/codes";
 import { getPhotosFor } from "@/lib/photos/server";
 import { surveyMatches } from "@/lib/rules/survey";
 import { getTargetFor } from "@/lib/targets/server";
-import { elapsedFractionOfYear, paceOf, sumLines, fmtEur } from "@/lib/rules/target";
+import { buildTargetStatus, fmtQtyUnit, fmtUnit } from "@/lib/rules/target";
+import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
 import { getPaceThresholds } from "@/lib/settings";
 import { todayIso, formatTRDate } from "@/lib/week";
 import { VisitDateEditor } from "@/components/visit-date-editor";
@@ -89,19 +90,25 @@ export default async function VisitDetailPage({
   if (isOwner && company?.kind === "distributor") {
     const today = todayIso();
     const year = Number(today.slice(0, 4));
-    const [target, thresholds] = await Promise.all([
+    const [target, thresholds, salesCats, shipments] = await Promise.all([
       getTargetFor(supabase, company.id, year),
       getPaceThresholds(),
+      loadSalesCategories(supabase),
+      shipmentTotalsFor(supabase, company.id, year),
     ]);
-    if (target && target.status !== "iptal" && target.lines.length > 0) {
-      const tot = sumLines(target.lines);
-      const pace = paceOf(tot.actual_eur, tot.target_eur, elapsedFractionOfYear(year, today), thresholds);
-      if (pace.pace === "geride")
-        stepHints.sonraki_aksiyon = `Hedefin gerisinde: ${year} hedefi ${fmtEur(
-          tot.target_eur
-        )}, gerçekleşen ${fmtEur(tot.actual_eur)} (beklenenin ${fmtEur(
-          pace.gap
-        )} altında). Aksiyonu buna göre seç.`;
+    if (target && target.status !== "iptal") {
+      const st = buildTargetStatus(target.lines, salesCats, shipments, year, today, thresholds);
+      const behind = st.lines.filter((l) => l.pace.pace === "geride");
+      if (behind.length > 0)
+        stepHints.sonraki_aksiyon = `Hedefin gerisinde: ${behind
+          .map(
+            (l) =>
+              `${l.category.label_tr} ${fmtQtyUnit(l.shipped, l.category.unit)}/${fmtUnit(
+                l.target,
+                l.category.unit
+              )}`
+          )
+          .join(", ")}. Aksiyonu buna göre seç.`;
     }
   }
   const [{ data: stockCounts }, { data: surveyAnswers }] = await Promise.all([

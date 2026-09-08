@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { requireManager } from "@/lib/auth";
+import { CompanyNav } from "@/components/company-nav";
+import { companyNeighbours, listQueryString, withQuery } from "@/lib/companies/list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { VisitRecord, type VisitRecordProduct } from "@/components/visit-record";
@@ -14,7 +17,8 @@ import { formatTRDate, daysSince, todayIso } from "@/lib/week";
 import { TargetView } from "@/components/target-view";
 import { StockHistory } from "@/components/stock-history";
 import { getTargetFor } from "@/lib/targets/server";
-import { elapsedFractionOfYear } from "@/lib/rules/target";
+import { buildTargetStatus } from "@/lib/rules/target";
+import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
 import { getPaceThresholds } from "@/lib/settings";
 import { countedSkus, companyCountHistory } from "@/lib/stock/server";
 import { getPhotosForMany } from "@/lib/photos/server";
@@ -51,8 +55,10 @@ function one<T>(r: T | T[] | null | undefined): T | null {
 
 export default async function DealerFilePage({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams: { q?: string; tur?: string; atama?: string };
 }) {
   await requireManager();
   const supabase = createClient();
@@ -232,16 +238,17 @@ export default async function DealerFilePage({
   // Dealer-only extras: yearly target, stock counts, visit photos.
   const isDealer = company.kind === "distributor";
   const year = Number(todayIso().slice(0, 4));
-  const [target, thresholds, skuCols, stockHistory, visitPhotos, { data: activeCats }] =
+  const [target, thresholds, skuCols, stockHistory, visitPhotos, salesCats, shipments] =
     await Promise.all([
       isDealer ? getTargetFor(supabase, companyId, year) : Promise.resolve(null),
       getPaceThresholds(),
       isDealer ? countedSkus(supabase) : Promise.resolve([]),
       isDealer ? companyCountHistory(supabase, companyId, 8) : Promise.resolve([]),
       getPhotosForMany("visit", visits.map((v) => v.id)),
-      supabase.from("product_categories").select("id, label_tr").order("sort_order"),
+      isDealer ? loadSalesCategories(supabase) : Promise.resolve([]),
+      isDealer ? shipmentTotalsFor(supabase, companyId, year) : Promise.resolve(null),
     ]);
-  const targetElapsed = elapsedFractionOfYear(year, todayIso());
+  const targetStatus = buildTargetStatus(target?.lines ?? [], salesCats, shipments, year, todayIso(), thresholds);
 
   // Özel rapor cevapları (son 10) — question prompts fetched for the surveys involved.
   const { data: surveyAnswerRows } = await supabase
@@ -272,14 +279,32 @@ export default async function DealerFilePage({
     (sqBySurvey.get(q.survey_id) ?? sqBySurvey.set(q.survey_id, []).get(q.survey_id)!).push(q);
   }
 
+  // Önceki / Sıradaki in the order of the list the manager came from.
+  const hasListParams = searchParams.q != null || searchParams.tur != null || searchParams.atama != null;
+  const listParams = hasListParams
+    ? { q: searchParams.q, tur: searchParams.tur, atama: searchParams.atama }
+    : { tur: company.kind as string };
+  const navQs = hasListParams ? listQueryString(listParams) : "";
+  const neighbours = await companyNeighbours(createAdminClient(), listParams, companyId, 500);
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 text-[15px] leading-relaxed sm:text-base">
       <Link
-        href="/admin/firmalar"
+        href={withQuery("/admin/firmalar", navQs)}
         className="inline-block text-sm text-muted-foreground hover:text-foreground print:hidden"
       >
         ← Firmalar
       </Link>
+      {neighbours && (
+        <CompanyNav
+          prevHref={neighbours.prev ? withQuery(`/admin/bayi/${neighbours.prev.id}`, navQs) : null}
+          prevName={neighbours.prev?.name ?? null}
+          nextHref={neighbours.next ? withQuery(`/admin/bayi/${neighbours.next.id}`, navQs) : null}
+          nextName={neighbours.next?.name ?? null}
+          index={neighbours.index}
+          total={neighbours.total}
+        />
+      )}
 
       {/* Künye */}
       <Card>
@@ -368,13 +393,7 @@ export default async function DealerFilePage({
             <CardTitle className="text-base">Hedef {year}</CardTitle>
           </CardHeader>
           <CardContent>
-            <TargetView
-              target={target}
-              categories={(activeCats as { id: string; label_tr: string }[] | null) ?? []}
-              elapsed={targetElapsed}
-              thresholds={thresholds}
-              compact
-            />
+            <TargetView status={targetStatus} target={target} compact />
             <Link
               href={`/admin/hedefler/${companyId}/${year}`}
               className="mt-2 inline-block text-sm underline print:hidden"

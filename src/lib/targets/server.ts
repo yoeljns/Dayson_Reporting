@@ -48,3 +48,43 @@ export async function targetsForYear(
   }
   return map;
 }
+
+export type TargetRevisionView = {
+  id: string;
+  changed_at: string;
+  changed_by_name: string | null;
+  reason: string | null;
+  before: Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+  after: Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+};
+
+/** Change history of one target (newest first). */
+export async function getTargetRevisions(
+  supabase: SupabaseClient,
+  targetId: string
+): Promise<TargetRevisionView[]> {
+  const { data } = await supabase
+    .from("dealer_target_revisions")
+    .select("id, changed_at, reason, before, after, changed_by, profiles:changed_by(full_name)")
+    .eq("target_id", targetId)
+    .order("changed_at", { ascending: false })
+    .limit(50);
+  return ((data as unknown as {
+    id: string;
+    changed_at: string;
+    reason: string | null;
+    before: TargetRevisionView["before"];
+    after: TargetRevisionView["after"];
+    profiles: { full_name: string } | { full_name: string }[] | null;
+  }[] | null) ?? []).map((r) => {
+    const p = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+    return {
+      id: r.id,
+      changed_at: r.changed_at,
+      changed_by_name: p?.full_name ?? null,
+      reason: r.reason,
+      before: r.before ?? {},
+      after: r.after ?? {},
+    };
+  });
+}

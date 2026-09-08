@@ -17,7 +17,8 @@ import {
 import { groupAssignments, repsLabel } from "@/lib/assignments";
 import { getStaleDays, getPaceThresholds } from "@/lib/settings";
 import { targetsForYear } from "@/lib/targets/server";
-import { elapsedFractionOfYear, paceOf, sumLines, fmtEur } from "@/lib/rules/target";
+import { buildTargetStatus, fmtQtyUnit, fmtUnit } from "@/lib/rules/target";
+import { loadSalesCategories, shipmentTotalsForYear } from "@/lib/sales/server";
 import { PaceBadge } from "@/components/target-view";
 import { stockCountCode } from "@/lib/codes";
 import {
@@ -78,6 +79,8 @@ export default async function ManagerDashboardPage() {
     { count: surveyAnswersWeek },
     { data: recentCounts },
     targets,
+    shipmentsByCompany,
+    salesCats,
     { data: todayPlanItems },
     { data: todayVisitRows },
   ] = await Promise.all([
@@ -177,6 +180,8 @@ export default async function ManagerDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(5),
     targetsForYear(supabase, year),
+    shipmentTotalsForYear(supabase, year),
+    loadSalesCategories(supabase),
     // Today's planned items (this week's plans) — for plan adherence per rep.
     supabase
       .from("visit_plan_items")
@@ -207,17 +212,31 @@ export default async function ManagerDashboardPage() {
     (visitedToday.get(v.salesperson_id) ?? visitedToday.set(v.salesperson_id, new Set()).get(v.salesperson_id)!).add(v.company_id);
   }
 
-  // Dealers behind their yearly target (lowest pace first).
-  const elapsed = elapsedFractionOfYear(year, today);
+  // Dealers with at least one category behind target (most behind first).
   const dealerName = new Map(((distributors ?? []) as { id: string; name: string }[]).map((d) => [d.id, d.name]));
   const behindTargets = Array.from(targets.values())
-    .filter((t) => t.status !== "iptal" && t.lines.length > 0)
+    .filter((t) => t.status !== "iptal")
     .map((t) => {
-      const tot = sumLines(t.lines);
-      return { t, tot, pace: paceOf(tot.actual_eur, tot.target_eur, elapsed, paceThresholds) };
+      const st = buildTargetStatus(
+        t.lines,
+        salesCats,
+        shipmentsByCompany.get(t.company_id) ?? null,
+        year,
+        today,
+        paceThresholds
+      );
+      const worst =
+        st.lines
+          .filter((l) => l.pace.pace === "geride")
+          .sort((x, y) => (x.pace.paceRatio ?? 0) - (y.pace.paceRatio ?? 0))[0] ?? null;
+      return { t, st, worst };
     })
-    .filter((x) => x.pace.pace === "geride")
-    .sort((a, b) => (a.pace.paceRatio ?? 0) - (b.pace.paceRatio ?? 0));
+    .filter((x) => x.st.pace === "geride")
+    .sort(
+      (x, y) =>
+        y.st.behind / Math.max(1, y.st.withTarget) - x.st.behind / Math.max(1, x.st.withTarget) ||
+        (x.worst?.pace.paceRatio ?? 0) - (y.worst?.pace.paceRatio ?? 0)
+    );
 
   // Dealer coverage: which distributors are unassigned or long-unvisited.
   const assignedTo = groupAssignments(assignments);
@@ -526,7 +545,7 @@ export default async function ManagerDashboardPage() {
             emptyText="Hedefin gerisinde bayi yok."
             allHref={`/admin/hedefler?year=${year}`}
           >
-            {behindTargets.slice(0, 5).map(({ t, tot, pace }) => (
+            {behindTargets.slice(0, 5).map(({ t, st, worst }) => (
               <Link
                 key={t.id}
                 href={`/admin/hedefler/${t.company_id}/${year}`}
@@ -537,11 +556,16 @@ export default async function ManagerDashboardPage() {
                     {dealerName.get(t.company_id) ?? "Bayi"}
                   </span>
                   <span className="block text-xs text-muted-foreground">
-                    {fmtEur(tot.actual_eur)} / {fmtEur(tot.target_eur)} · %
-                    {Math.round((pace.ratio ?? 0) * 100)}
+                    {st.behind}/{st.withTarget} kategori geride
+                    {worst
+                      ? ` · ${worst.category.label_tr} ${fmtQtyUnit(worst.shipped, worst.category.unit)}/${fmtUnit(
+                          worst.target,
+                          worst.category.unit
+                        )}`
+                      : ""}
                   </span>
                 </span>
-                <PaceBadge pace={pace.pace} />
+                <PaceBadge pace={st.pace} />
               </Link>
             ))}
           </FollowUpCard>

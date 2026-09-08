@@ -382,9 +382,59 @@ export interface DealerTarget {
 export interface DealerTargetLine {
   id: string;
   target_id: string;
-  category_id: string;
+  /** Legacy product-category key (v1 targets); null for sales-category lines. */
+  category_id: string | null;
+  sales_category_id: string | null;
   target_qty: number;
   target_eur: number;
   actual_qty: number;
   actual_eur: number;
+  /** 12 monthly targets when the category is monthly (sum = target_qty). */
+  monthly_qty: number[] | null;
+}
+
+export type SalesUnit = "palet" | "adet" | "koli";
+
+export interface SalesCategory {
+  id: string;
+  code: string;
+  label_tr: string;
+  unit: SalesUnit;
+  monthly: boolean;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DealerTargetRevision {
+  id: string;
+  target_id: string;
+  changed_at: string;
+  changed_by: string | null;
+  reason: string | null;
+  before: Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+  after: Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+}
+
+export interface ErpCustomer {
+  cari_name: string;
+  company_id: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export interface Shipment {
+  id: string;
+  batch_id: string | null;
+  cari_name: string;
+  company_id: string | null;
+  fis_no: string;
+  fis_date: string;
+  product_code: string;
+  product_desc: string | null;
+  koli: number;
+  eur: number;
+  sales_category_id: string | null;
+  qty: number | null;
+  created_at: string;
 }

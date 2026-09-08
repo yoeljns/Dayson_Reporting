@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
 import { requireManager } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TargetEditor } from "@/components/target-editor";
 import { TargetView } from "@/components/target-view";
-import { getTargetFor } from "@/lib/targets/server";
-import { elapsedFractionOfYear } from "@/lib/rules/target";
+import { getTargetFor, getTargetRevisions } from "@/lib/targets/server";
+import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
+import { buildTargetStatus } from "@/lib/rules/target";
 import { getPaceThresholds } from "@/lib/settings";
 import { todayIso } from "@/lib/week";
 
@@ -28,13 +29,10 @@ export default async function TargetDetailPage({
     .maybeSingle();
   if (!company || company.kind !== "distributor") notFound();
 
-  const [target, { data: cats }, { data: contacts }, thresholds] = await Promise.all([
+  const [target, categories, shipments, { data: contacts }, thresholds] = await Promise.all([
     getTargetFor(supabase, company.id, year),
-    supabase
-      .from("product_categories")
-      .select("id, label_tr")
-      .eq("is_active", true)
-      .order("sort_order"),
+    loadSalesCategories(supabase),
+    shipmentTotalsFor(supabase, company.id, year),
     supabase
       .from("company_contacts")
       .select("id, name, role")
@@ -42,28 +40,36 @@ export default async function TargetDetailPage({
       .order("name"),
     getPaceThresholds(),
   ]);
-  const categories = (cats as { id: string; label_tr: string }[] | null) ?? [];
-  const elapsed = elapsedFractionOfYear(year, todayIso());
+  const revisions = target ? await getTargetRevisions(supabase, target.id) : [];
+  const today = todayIso();
+  const status = buildTargetStatus(target?.lines ?? [], categories, shipments, year, today, thresholds);
+  const shipped: Record<string, number> = {};
+  for (const [id, t] of shipments.byCategory) shipped[id] = t.qty;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <Link
         href={`/admin/hedefler?year=${year}`}
         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" /> Hedefler
       </Link>
-      <div>
-        <h1 className="text-xl font-semibold">
-          {company.name} · {year}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {[company.logo_code, company.city].filter(Boolean).join(" · ")}
-          {" · "}
-          <Link href={`/admin/bayi/${company.id}`} className="underline">
-            Bayi dosyası
-          </Link>
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">
+            {company.name} · {year}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {[company.logo_code, company.city].filter(Boolean).join(" · ")}
+            {" · "}
+            <Link href={`/admin/bayi/${company.id}`} className="underline">
+              Bayi dosyası
+            </Link>
+          </p>
+        </div>
+        <Link href="/admin/sevkiyat" className="flex items-center gap-1 text-sm underline">
+          <Upload className="h-4 w-4" /> Sevkiyat yükle
+        </Link>
       </div>
 
       <Card>
@@ -71,12 +77,7 @@ export default async function TargetDetailPage({
           <CardTitle className="text-base">Özet</CardTitle>
         </CardHeader>
         <CardContent>
-          <TargetView
-            target={target}
-            categories={categories}
-            elapsed={elapsed}
-            thresholds={thresholds}
-          />
+          <TargetView status={status} target={target} revisions={revisions} categories={categories} />
         </CardContent>
       </Card>
 
@@ -86,6 +87,7 @@ export default async function TargetDetailPage({
         year={year}
         categories={categories}
         contacts={(contacts as { id: string; name: string; role: string | null }[] | null) ?? []}
+        shipped={shipped}
       />
     </div>
   );

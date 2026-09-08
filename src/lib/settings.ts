@@ -1,3 +1,4 @@
+import { DEFAULT_PALLET_RATES, normalizeRates, type PalletRates } from "@/lib/sales/mapping";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -145,5 +146,20 @@ export async function getPaceThresholds(): Promise<PaceThresholds> {
     return DEFAULT_PACE_THRESHOLDS;
   } catch {
     return DEFAULT_PACE_THRESHOLDS;
+  }
+}
+
+/** Koli → palet conversion rates used when shipments are imported. */
+export async function getPalletRates(): Promise<PalletRates> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "koli_per_pallet")
+      .maybeSingle();
+    return normalizeRates(data?.value ?? null);
+  } catch {
+    return DEFAULT_PALLET_RATES;
   }
 }

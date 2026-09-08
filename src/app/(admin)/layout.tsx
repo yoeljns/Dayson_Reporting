@@ -23,6 +23,7 @@ const adminLinks: AdminLink[] = [
   { href: "/admin/stok", label: "Stok Durumu", group: "Takip" },
   { href: "/admin/anketler", label: "Özel Raporlar", group: "Takip" },
   { href: "/admin/hedefler", label: "Hedefler", group: "Takip" },
+  { href: "/admin/sevkiyat", label: "Sevkiyat", group: "Takip" },
   { href: "/admin/kullanicilar", label: "Kullanıcılar", group: "Ayarlar", adminOnly: true },
   { href: "/admin/sorular", label: "Soru Kataloğu", group: "Ayarlar", adminOnly: true },
   { href: "/admin/formlar", label: "Form Alanları", group: "Ayarlar", adminOnly: true },
