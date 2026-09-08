@@ -193,43 +193,48 @@ export default async function VisitDetailPage({
 
   const allQuestions = (questions as QuestionWithOptions[]) ?? [];
 
-  // Shelf info of the company's previous completed visit → per-category hint
-  // in the products step ("Önceki ziyaret (…): Dayson, Rakip A").
+  // Shelf info of the company's most recent OTHER visit that actually has
+  // product answers (draft or completed, not deleted) → per-category hint in
+  // the products step, so the rep only re-enters when something changed.
   const previousProducts: Record<string, { date: string; labels: string[] }> = {};
   if (company) {
-    const { data: prevVisit } = await supabase
+    const { data: otherVisits } = await supabase
       .from("visits")
       .select("id, visit_date")
       .eq("company_id", company.id)
-      .eq("status", "tamamlandi")
       .neq("id", visit.id)
-      .lte("visit_date", visit.visit_date as string)
+      .is("deleted_at", null)
       .order("visit_date", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (prevVisit) {
+      .limit(60);
+    const ordered = (otherVisits as { id: string; visit_date: string }[] | null) ?? [];
+    if (ordered.length > 0) {
       const { data: prevAnswers } = await supabase
         .from("visit_product_answers")
-        .select("category_id, brand_id, custom_name, supply_kind, product_brands(name)")
-        .eq("visit_id", prevVisit.id);
-      for (const a of (prevAnswers as unknown as {
+        .select("visit_id, category_id, brand_id, custom_name, supply_kind, product_brands(name)")
+        .in(
+          "visit_id",
+          ordered.map((v) => v.id)
+        );
+      const rows = (prevAnswers as unknown as {
+        visit_id: string;
         category_id: string;
         brand_id: string | null;
         custom_name: string | null;
         supply_kind: string;
         product_brands: { name: string } | { name: string }[] | null;
-      }[] | null) ?? []) {
+      }[] | null) ?? [];
+      const withAnswers = new Set(rows.map((r) => r.visit_id));
+      const source = ordered.find((v) => withAnswers.has(v.id));
+      for (const a of rows) {
+        if (!source || a.visit_id !== source.id) continue;
         const b = Array.isArray(a.product_brands) ? a.product_brands[0] : a.product_brands;
         const label =
           a.supply_kind === "brand"
             ? (b?.name ?? a.custom_name ?? null)
             : (SUPPLY_KIND_LABELS[a.supply_kind as keyof typeof SUPPLY_KIND_LABELS] ?? null);
         if (!label) continue;
-        const entry = (previousProducts[a.category_id] ??= {
-          date: prevVisit.visit_date as string,
-          labels: [],
-        });
+        const entry = (previousProducts[a.category_id] ??= { date: source.visit_date, labels: [] });
         if (!entry.labels.includes(label)) entry.labels.push(label);
       }
     }

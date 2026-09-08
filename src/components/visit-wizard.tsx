@@ -671,7 +671,7 @@ export function VisitWizard({
                     <div className={prev ? "font-medium" : "mb-2 font-medium"}>{c.label_tr}</div>
                     {prev && (
                       <p className="mb-2 text-xs text-muted-foreground">
-                        Önceki ziyaret ({formatTRDate(prev.date)}): {prev.labels.join(", ")}
+                        Son raf bilgisi ({formatTRDate(prev.date)}): {prev.labels.join(", ")}
                       </p>
                     )}
                     <div className="flex flex-wrap gap-2">
