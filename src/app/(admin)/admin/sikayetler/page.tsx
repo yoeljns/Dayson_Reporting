@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
-import { todayIso, daysSince, formatTRDate } from "@/lib/week";
+import { formatTRDate } from "@/lib/week";
+import { ExtrasList } from "@/components/extra-fields";
+import { DeleteRecordButton } from "@/components/delete-record-button";
+import { loadFormFields, type Extras } from "@/lib/form-fields";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ComplaintStatusChanger } from "@/components/complaint-status-changer";
@@ -9,16 +12,7 @@ import { ComplaintDrawer } from "@/components/complaint-drawer";
 import { PhotoGrid } from "@/components/photo-grid";
 import { getPhotosFor } from "@/lib/photos/server";
 import { complaintCode } from "@/lib/codes";
-import { cn } from "@/lib/utils";
-import {
-  COMPLAINT_TYPE_LABELS,
-  COMPLAINT_STATUS_LABELS,
-  COMPLAINT_OWNER_DEPT_LABELS,
-  COMPLAINT_PRIORITY_LABELS,
-  COMPLAINT_OWNER_DEPTS,
-  type ComplaintStatus,
-  type ComplaintOwnerDept,
-} from "@/lib/enums";
+import { COMPLAINT_STATUS_LABELS, type ComplaintStatus } from "@/lib/enums";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -33,11 +27,8 @@ const statusVariant: Record<
 type Row = {
   id: string;
   title: string;
-  type: string;
   status: ComplaintStatus;
-  owner_dept: string;
-  priority: number;
-  due_date: string | null;
+  detected_at: string | null;
   created_at: string;
   complainant_name: string | null;
   companies: { name: string } | { name: string }[] | null;
@@ -56,50 +47,35 @@ const COLUMNS: { key: "acik" | "islemde" | "kapandi"; label: string; statuses: C
 export default async function ComplaintBoardPage({
   searchParams,
 }: {
-  searchParams: { dept?: string; overdue?: string; id?: string };
+  searchParams: { id?: string; q?: string };
 }) {
   const profile = await requireManager();
   const supabase = createClient();
-  const today = todayIso();
-  const dept = COMPLAINT_OWNER_DEPTS.includes(searchParams.dept as ComplaintOwnerDept)
-    ? (searchParams.dept as ComplaintOwnerDept)
-    : undefined;
-  const overdue = searchParams.overdue === "1";
+  const q = (searchParams.q ?? "").trim().toLocaleLowerCase("tr");
 
-  let query = supabase
+  const { data } = await supabase
     .from("complaints")
     .select(
-      "id, title, type, status, owner_dept, priority, due_date, created_at, complainant_name, companies(name), reporter:reported_by(full_name)"
+      "id, title, status, detected_at, created_at, complainant_name, companies(name), reporter:reported_by(full_name)"
     )
     .eq("is_draft", false)
-    .order("priority", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(400);
-  if (dept) query = query.eq("owner_dept", dept);
-  const { data } = await query;
   let rows = (data as Row[] | null) ?? [];
   const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
   rows = rows.filter(
     (r) => r.status === "acik" || r.status === "islemde" || r.created_at >= cutoff
   );
-  if (overdue)
-    rows = rows.filter(
-      (r) => (r.status === "acik" || r.status === "islemde") && r.due_date != null && r.due_date < today
+  if (q)
+    rows = rows.filter((r) =>
+      [r.title, one(r.companies)?.name, r.complainant_name, one(r.reporter)?.full_name]
+        .filter(Boolean)
+        .some((t) => String(t).toLocaleLowerCase("tr").includes(q))
     );
 
-  const href = (next: { dept?: string | null; overdue?: boolean }) => {
-    const sp = new URLSearchParams();
-    const d = next.dept === undefined ? dept : next.dept;
-    const o = next.overdue === undefined ? overdue : next.overdue;
-    if (d) sp.set("dept", d);
-    if (o) sp.set("overdue", "1");
-    const s = sp.toString();
-    return s ? `/admin/sikayetler?${s}` : "/admin/sikayetler";
-  };
   const openHref = (id: string) => {
     const sp = new URLSearchParams();
-    if (dept) sp.set("dept", dept);
-    if (overdue) sp.set("overdue", "1");
+    if (searchParams.q) sp.set("q", searchParams.q);
     sp.set("id", id);
     return `/admin/sikayetler?${sp.toString()}`;
   };
@@ -114,20 +90,17 @@ export default async function ComplaintBoardPage({
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Chip href={href({ dept: null, overdue: false })} active={!dept && !overdue}>
-          Tümü
-        </Chip>
-        <Chip href={href({ overdue: !overdue })} active={overdue}>
-          Gecikenler
-        </Chip>
-        <span className="mx-1 h-6 w-px bg-border" />
-        {COMPLAINT_OWNER_DEPTS.map((d) => (
-          <Chip key={d} href={href({ dept: dept === d ? null : d })} active={dept === d}>
-            {COMPLAINT_OWNER_DEPT_LABELS[d]}
-          </Chip>
-        ))}
-      </div>
+      <form className="flex gap-2">
+        <input
+          name="q"
+          defaultValue={searchParams.q ?? ""}
+          placeholder="Firma / kişi / açıklama ara…"
+          className="h-9 w-full max-w-sm rounded-md border bg-background px-3 text-sm"
+        />
+        <button type="submit" className="rounded-md border px-3 text-sm hover:bg-accent">
+          Ara
+        </button>
+      </form>
 
       <div className="grid gap-3 lg:grid-cols-3">
         {COLUMNS.map((col) => {
@@ -143,39 +116,27 @@ export default async function ComplaintBoardPage({
                   Kayıt yok
                 </p>
               ) : (
-                list.map((c) => {
-                  const isOverdue =
-                    c.due_date != null &&
-                    c.due_date < today &&
-                    (c.status === "acik" || c.status === "islemde");
-                  return (
-                    <Link key={c.id} href={openHref(c.id)} scroll={false}>
-                      <Card className={cn("hover:bg-accent", isOverdue && "border-destructive/40")}>
-                        <CardContent className="space-y-1 p-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="font-medium leading-snug">{c.title}</div>
-                            {isOverdue ? (
-                              <Badge variant="destructive">{daysSince(c.due_date) ?? 0} gün gecikti</Badge>
-                            ) : (
-                              <Badge variant={statusVariant[c.status]}>
-                                {COMPLAINT_STATUS_LABELS[c.status]}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {one(c.companies)?.name || c.complainant_name || "—"} ·{" "}
-                            {COMPLAINT_OWNER_DEPT_LABELS[c.owner_dept as ComplaintOwnerDept]}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {complaintCode(c.id)} · {COMPLAINT_PRIORITY_LABELS[c.priority]} ·{" "}
-                            {one(c.reporter)?.full_name ?? "—"}
-                            {c.due_date ? ` · termin ${formatTRDate(c.due_date)}` : ""}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  );
-                })
+                list.map((c) => (
+                  <Link key={c.id} href={openHref(c.id)} scroll={false}>
+                    <Card className="hover:bg-accent">
+                      <CardContent className="space-y-1 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-medium leading-snug">{c.title}</div>
+                          <Badge variant={statusVariant[c.status]}>
+                            {COMPLAINT_STATUS_LABELS[c.status]}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {one(c.companies)?.name || c.complainant_name || "—"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {complaintCode(c.id)} · {one(c.reporter)?.full_name ?? "—"} ·{" "}
+                          {formatTRDate((c.detected_at ?? c.created_at).slice(0, 10))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))
               )}
             </div>
           );
@@ -191,11 +152,11 @@ export default async function ComplaintBoardPage({
 
 async function ComplaintDetailDrawer({ id, canReopen }: { id: string; canReopen: boolean }) {
   const supabase = createClient();
-  const [{ data: c }, { data: events }, photos] = await Promise.all([
+  const [{ data: c }, { data: events }, photos, fields] = await Promise.all([
     supabase
       .from("complaints")
       .select(
-        "id, type, owner_dept, status, title, description, priority, due_date, created_at, complainant_name, complainant_phone, visit_id, company_id, companies(name), reporter:reported_by(full_name)"
+        "id, status, title, description, detected_at, extras, created_at, complainant_name, complainant_phone, visit_id, company_id, companies(name), reporter:reported_by(full_name), product_categories(label_tr)"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -205,8 +166,10 @@ async function ComplaintDetailDrawer({ id, canReopen }: { id: string; canReopen:
       .eq("complaint_id", id)
       .order("created_at", { ascending: true }),
     getPhotosFor("complaint", id),
+    loadFormFields(supabase, "sikayet"),
   ]);
   if (!c) return null;
+  const productLabel = one(c.product_categories as { label_tr: string } | { label_tr: string }[] | null)?.label_tr;
   const company = one(c.companies as { name: string } | { name: string }[] | null);
   const reporter = one(c.reporter as { full_name: string } | { full_name: string }[] | null);
   return (
@@ -226,10 +189,8 @@ async function ComplaintDetailDrawer({ id, canReopen }: { id: string; canReopen:
           <Fact label="Firma" value={company?.name ?? "—"} href={c.company_id ? `/admin/bayi/${c.company_id}` : undefined} />
           <Fact label="Şikayet eden" value={c.complainant_name ?? "—"} />
           <Fact label="Telefon" value={c.complainant_phone ?? "—"} />
-          <Fact label="Tip" value={COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]} />
-          <Fact label="Departman" value={COMPLAINT_OWNER_DEPT_LABELS[c.owner_dept as ComplaintOwnerDept]} />
-          <Fact label="Öncelik" value={COMPLAINT_PRIORITY_LABELS[c.priority] ?? String(c.priority)} />
-          <Fact label="Termin" value={c.due_date ? formatTRDate(c.due_date) : "—"} />
+          <Fact label="Tespit tarihi" value={c.detected_at ? formatTRDate(c.detected_at as string) : "—"} />
+          {productLabel && <Fact label="Ürün" value={productLabel} />}
           <Fact label="Bildiren" value={reporter?.full_name ?? "—"} />
           <Fact label="Açılış" value={new Date(c.created_at).toLocaleString("tr-TR")} />
           {c.visit_id && <Fact label="Ziyaret" value="Ziyarete git" href={`/ziyaret/${c.visit_id}`} />}
@@ -238,6 +199,7 @@ async function ComplaintDetailDrawer({ id, canReopen }: { id: string; canReopen:
           <div className="text-muted-foreground">Açıklama</div>
           <p className="whitespace-pre-wrap text-base leading-relaxed">{c.description}</p>
         </div>
+        <ExtrasList fields={fields} extras={c.extras as Extras | null} />
         {photos.length > 0 && (
           <div>
             <div className="mb-1 text-muted-foreground">Fotoğraflar</div>
@@ -251,6 +213,9 @@ async function ComplaintDetailDrawer({ id, canReopen }: { id: string; canReopen:
             current={c.status as ComplaintStatus}
             canReopen={canReopen}
           />
+        </div>
+        <div className="flex justify-end print:hidden">
+          <DeleteRecordButton kind="complaint" id={c.id} redirectTo="/admin/sikayetler" />
         </div>
         <div>
           <div className="mb-2 font-medium">Geçmiş</div>
@@ -295,16 +260,3 @@ function Fact({ label, value, href }: { label: string; value: string; href?: str
   );
 }
 
-function Chip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "rounded-full border px-3 py-1 text-xs",
-        active ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent"
-      )}
-    >
-      {children}
-    </Link>
-  );
-}

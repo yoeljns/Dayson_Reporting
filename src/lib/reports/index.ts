@@ -17,7 +17,6 @@ export type FilterKind =
   | "sp" // salesperson select
   | "vstatus" // visit status select
   | "cstatus" // complaint status select
-  | "dept" // complaint department select
   | "competitor" // competitor select
   | "segment" // segment select
   | "kind" // company kind select
@@ -70,11 +69,11 @@ export const REPORTS: Record<string, ReportDef> = {
   },
   sikayet: {
     label: "Şikayet Raporu",
-    question: "Hangi şikayetler açıldı, kimde, hangi durumda ve gecikti mi?",
+    question: "Hangi şikayetler açıldı, kim bildirdi, hangi durumda ve ne kadar sürede çözüldü?",
     group: "Şikayet",
     defaultRangeText: "Varsayılan: son 30 gün",
     filenameBase: "sikayet-raporu",
-    filters: ["range", "cstatus", "dept"],
+    filters: ["range", "cstatus"],
     build: buildSikayet,
   },
   rakip: {

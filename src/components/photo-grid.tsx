@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { X, Trash2, Camera } from "lucide-react";
+import { X, Trash2, Camera, FileText } from "lucide-react";
+import { isPdfMime } from "@/lib/enums";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -35,6 +36,8 @@ export function PhotoGrid({
     ) : null;
   }
 
+  const isPdf = (p: PhotoView) => isPdfMime(p.mime);
+
   async function del(p: PhotoView) {
     setBusy(p.id);
     const res = await removePhoto({ documentId: p.id });
@@ -43,7 +46,7 @@ export function PhotoGrid({
       toast(res.error, "warn");
       return;
     }
-    toast("Fotoğraf silindi", "ok");
+    toast(isPdf(p) ? "Dosya silindi" : "Fotoğraf silindi", "ok");
     setOpen(null);
     router.refresh();
   }
@@ -55,27 +58,40 @@ export function PhotoGrid({
       <div className="flex flex-wrap gap-2 print:gap-1">
         {photos.map((p) => (
           <div key={p.id} className={`relative ${cell} shrink-0`}>
-            <button
-              type="button"
-              onClick={() => setOpen(p)}
-              className={`${cell} overflow-hidden rounded-md border bg-muted`}
-              title="Büyüt"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={p.url}
-                alt="Fotoğraf"
-                loading="lazy"
-                className="h-full w-full object-cover"
-              />
-            </button>
+            {isPdf(p) ? (
+              <a
+                href={p.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`flex ${cell} flex-col items-center justify-center gap-1 rounded-md border bg-muted text-muted-foreground hover:text-foreground`}
+                title="PDF'i aç"
+              >
+                <FileText className={size === "sm" ? "h-5 w-5" : "h-7 w-7"} />
+                <span className="text-[10px] font-medium">PDF</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setOpen(p)}
+                className={`${cell} overflow-hidden rounded-md border bg-muted`}
+                title="Büyüt"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.url}
+                  alt="Fotoğraf"
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              </button>
+            )}
             {canDelete && (
               <ConfirmButton
                 variant="destructive"
                 size="icon"
                 className="absolute -right-1.5 -top-1.5 h-6 w-6 rounded-full print:hidden"
-                title="Fotoğrafı sil"
-                message="Bu fotoğraf silinsin mi?"
+                title={isPdf(p) ? "Dosyayı sil" : "Fotoğrafı sil"}
+                message={isPdf(p) ? "Bu dosya silinsin mi?" : "Bu fotoğraf silinsin mi?"}
                 confirmText="Sil"
                 disabled={busy === p.id}
                 onConfirm={() => del(p)}

@@ -9,10 +9,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Stepper } from "@/components/ui/stepper";
 import { CompanyPicker, type PickedCompany } from "@/components/company-picker";
 import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
+import { ExtraFieldsInput } from "@/components/extra-fields";
 import { useToast } from "@/components/ui/toast";
 import { newId } from "@/lib/uuid";
 import { formatTRDate } from "@/lib/week";
 import { stockCountCode } from "@/lib/codes";
+import {
+  fieldOn,
+  fieldRequired,
+  labelOf,
+  missingRequiredField,
+  type Extras,
+  type FormField,
+} from "@/lib/form-fields";
 import { saveStockCount } from "@/app/(app)/stok/actions";
 import { attachPhotos } from "@/app/(app)/foto/actions";
 import {
@@ -25,9 +34,21 @@ import {
 
 export type StockSku = { id: string; code: string; name_tr: string; category: string | null };
 export type LastCount = { pallets: number; countedAt: string };
+/** Existing count opened with `?edit=` — pallets keyed by sku id. */
+export type StockFormInitial = {
+  id: string;
+  company: PickedCompany;
+  pallets: Record<string, number>;
+  note: string;
+  extras: Extras;
+  visitId: string | null;
+  countedAt: string;
+};
 
 export function StockCountForm({
   skus,
+  fields,
+  initial,
   company,
   visitId,
   visitDate,
@@ -35,22 +56,34 @@ export function StockCountForm({
   returnTo,
 }: {
   skus: StockSku[];
+  fields: FormField[];
+  initial: StockFormInitial | null;
   company: PickedCompany | null;
   visitId: string | null;
   visitDate: string | null;
-  /** Last count per SKU for the preset company. */
+  /** Last count per SKU for the preset / edited company. */
   lastByCompany: Record<string, LastCount>;
   returnTo: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [clientId] = useState(() => newId());
-  const [picked, setPicked] = useState<PickedCompany | null>(company);
-  const [pallets, setPallets] = useState<Record<string, number>>({});
-  const [note, setNote] = useState("");
+  const editing = Boolean(initial);
+  const [clientId] = useState(() => initial?.id ?? newId());
+  const fixedCompany = initial?.company ?? company;
+  const [picked, setPicked] = useState<PickedCompany | null>(fixedCompany);
+  const [pallets, setPallets] = useState<Record<string, number>>(initial?.pallets ?? {});
+  const [note, setNote] = useState(initial?.note ?? "");
+  const [extras, setExtras] = useState<Extras>(initial?.extras ?? {});
   const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const on = (k: string) => fieldOn(fields, k);
+  const lbl = (k: string, fb: string) => labelOf(fields, k, fb);
+  const star = (k: string) =>
+    fieldRequired(fields, k) ? <span className="text-destructive"> *</span> : null;
+  const effVisitId = visitId ?? initial?.visitId ?? null;
+  const countedAt = visitDate ?? initial?.countedAt ?? null;
 
   const total = useMemo(
     () => Object.values(pallets).reduce((a, b) => a + b, 0),
@@ -70,16 +103,24 @@ export function StockCountForm({
     setError(null);
     if (!picked) return setError("Bayi seçin.");
     if (total <= 0) return setError("En az bir ürün için palet girin.");
+    const missing = missingRequiredField(
+      fields,
+      { company: picked.id, lines: total, note: note || null },
+      extras
+    );
+    if (missing) return setError(`"${missing.label_tr}" alanı zorunludur.`);
     const input = {
       id: clientId,
       companyId: picked.id,
-      visitId,
-      countedAt: visitDate,
+      visitId: effVisitId,
+      countedAt,
       note,
+      extras,
       lines: skus
         .filter((s) => (pallets[s.id] ?? 0) > 0)
         .map((s) => ({ skuId: s.id, pallets: pallets[s.id] })),
     };
+    const done = (id: string) => returnTo || (editing ? `/stok/${id}` : `/firma/${picked.id}?tab=stok`);
     const queue = async () => {
       await queueForm("stok", `Stok sayımı · ${picked.name}`, input, {
         refTable: "stock_count",
@@ -87,7 +128,7 @@ export function StockCountForm({
         list: photos,
       });
       toast(OFFLINE_SAVED_MSG, "info");
-      router.push(returnTo || "/");
+      router.push(returnTo || (editing ? `/stok/${clientId}` : "/"));
     };
     if (!isOnline()) {
       startTransition(queue);
@@ -111,8 +152,14 @@ export function StockCountForm({
           });
           if (att.error) toast(`Fotoğraflar eklenemedi: ${att.error}`, "warn");
         }
-        toast(`Stok sayımı kaydedildi · ${stockCountCode(res.id)}`, "ok");
-        router.push(returnTo || `/firma/${picked.id}?tab=stok`);
+        toast(
+          editing
+            ? `Stok sayımı güncellendi · ${stockCountCode(res.id)}`
+            : `Stok sayımı kaydedildi · ${stockCountCode(res.id)}`,
+          "ok"
+        );
+        router.push(done(res.id));
+        router.refresh();
       } catch (e) {
         if (isNetworkError(e)) {
           await queue();
@@ -127,9 +174,12 @@ export function StockCountForm({
     <Card>
       <CardContent className="space-y-5 pt-4">
         <div className="space-y-1.5">
-          <Label>Bayi *</Label>
-          {company ? (
-            <div className="rounded-md border p-3 font-medium">{company.name}</div>
+          <Label>
+            {lbl("company", "Bayi")}
+            <span className="text-destructive"> *</span>
+          </Label>
+          {fixedCompany ? (
+            <div className="rounded-md border p-3 font-medium">{fixedCompany.name}</div>
           ) : (
             <CompanyPicker
               value={picked}
@@ -146,11 +196,12 @@ export function StockCountForm({
           </p>
         ) : (
           <div className="space-y-4">
+            <div className="section-label">{lbl("lines", "Palet sayımı")}</div>
             {grouped.map(([cat, list]) => (
               <div key={cat || "_"} className="space-y-2">
-                {cat && <div className="section-label">{cat}</div>}
+                {cat && <div className="text-xs font-medium text-muted-foreground">{cat}</div>}
                 {list.map((s) => {
-                  const last = company ? lastByCompany[s.id] : undefined;
+                  const last = lastByCompany[s.id];
                   return (
                     <div
                       key={s.id}
@@ -186,23 +237,37 @@ export function StockCountForm({
           </div>
         )}
 
-        <div className="space-y-1.5">
-          <Label htmlFor="sc-note">Not</Label>
-          <Textarea id="sc-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
+        {on("note") && (
+          <div className="space-y-1.5">
+            <Label htmlFor="sc-note">
+              {lbl("note", "Not")}
+              {star("note")}
+            </Label>
+            <Textarea id="sc-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+        )}
 
-        <div className="space-y-1.5">
-          <Label>Fotoğraf (depo / raf)</Label>
-          <PhotoUploader
-            refTable="stock_count"
-            refId={clientId}
-            value={photos}
-            onChange={setPhotos}
-            onOffline={(p) =>
-              queuePhotoBlob({ ...p, refTable: "stock_count", refId: clientId })
-            }
-          />
-        </div>
+        <ExtraFieldsInput fields={fields} value={extras} onChange={setExtras} />
+
+        {on("photos") && (
+          <div className="space-y-1.5">
+            <Label>{lbl("photos", "Fotoğraf (depo / raf)")}</Label>
+            {editing && (
+              <p className="text-xs text-muted-foreground">
+                Mevcut fotoğraflar sayım sayfasında görünür; burada yeni fotoğraf ekleyebilirsiniz.
+              </p>
+            )}
+            <PhotoUploader
+              refTable="stock_count"
+              refId={clientId}
+              value={photos}
+              onChange={setPhotos}
+              onOffline={(p) =>
+                queuePhotoBlob({ ...p, refTable: "stock_count", refId: clientId })
+              }
+            />
+          </div>
+        )}
 
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button
@@ -213,9 +278,13 @@ export function StockCountForm({
         >
           Kaydet
         </Button>
-        {returnTo && (
-          <Button variant="ghost" className="w-full" onClick={() => router.push(returnTo)}>
-            Ziyarete dön
+        {(returnTo || editing) && (
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => router.push(returnTo || `/stok/${clientId}`)}
+          >
+            {returnTo ? "Ziyarete dön" : "Vazgeç"}
           </Button>
         )}
       </CardContent>

@@ -19,12 +19,15 @@ export function RecordPhotos({
   photos,
   canEdit,
   title = "Fotoğraflar",
+  allowPdf = false,
 }: {
   refTable: DocumentRefTable;
   refId: string;
   photos: PhotoView[];
   canEdit: boolean;
   title?: string | null;
+  /** Also accept PDF files (price lists). */
+  allowPdf?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<UploadedPhoto[]>([]);
@@ -55,6 +58,7 @@ export function RecordPhotos({
           onChange={setPending}
           autoAttach
           compact
+          allowPdf={allowPdf}
           onAttached={() => {
             // Drop attached entries once the server list catches up.
             setPending((prev) => prev.filter((p) => p.status !== "attached"));

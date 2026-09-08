@@ -11,6 +11,7 @@ type Row = {
   id: string;
   product_name: string;
   observed_price: number | null;
+  price_includes_vat: boolean | null;
   observed_at: string;
   city: string | null;
   is_draft: boolean;
@@ -27,7 +28,7 @@ export default async function CompetitorListPage() {
   const { data } = await supabase
     .from("competitor_observations")
     .select(
-      "id, product_name, observed_price, observed_at, city, is_draft, competitors(name), companies(name)"
+      "id, product_name, observed_price, price_includes_vat, observed_at, city, is_draft, competitors(name), companies(name)"
     )
     .or(`is_draft.eq.false,salesperson_id.eq.${profile.id}`)
     .order("observed_at", { ascending: false })
@@ -68,10 +69,7 @@ export default async function CompetitorListPage() {
               ? o.companies[0]
               : o.companies;
             const card = (
-              <Card
-                key={o.id}
-                className={o.is_draft ? "hover:bg-accent" : undefined}
-              >
+              <Card key={o.id} className="hover:bg-accent">
                 <CardContent className="flex items-center justify-between gap-2 p-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 font-medium">
@@ -92,20 +90,23 @@ export default async function CompetitorListPage() {
                       Taslak
                     </Badge>
                   ) : (
-                    <span className="shrink-0 font-medium">
-                      {formatTRY(o.observed_price)}
+                    <span className="shrink-0 text-right">
+                      <span className="block font-medium">{formatTRY(o.observed_price)}</span>
+                      {o.observed_price != null && (
+                        <span className="block text-[11px] text-muted-foreground">
+                          {o.price_includes_vat === true ? "KDV dahil" : o.price_includes_vat === false ? "KDV hariç" : "KDV ?"}
+                        </span>
+                      )}
                     </span>
                   )}
                 </CardContent>
               </Card>
             );
-            // Drafts resume the form; finalized rows are read-only.
-            return o.is_draft ? (
-              <Link key={o.id} href={`/rakip/yeni?draft=${o.id}`}>
+            // Drafts resume the form; finalized rows open the detail page.
+            return (
+              <Link key={o.id} href={o.is_draft ? `/rakip/yeni?draft=${o.id}` : `/rakip/${o.id}`}>
                 {card}
               </Link>
-            ) : (
-              card
             );
           })
         )}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatTRDate, daysSince } from "@/lib/week";
 import { fmtPallet, type LatestCount, type StockSkuCol } from "@/lib/stock/server";
 import { stockCountCode } from "@/lib/codes";
@@ -39,7 +40,9 @@ export function StockHistory({
             return (
               <tr key={c.id} className="border-b align-top last:border-0">
                 <td className="whitespace-nowrap py-1.5 pr-3">
-                  {formatTRDate(c.countedAt)}
+                  <Link href={`/stok/${c.id}`} className="font-medium underline-offset-2 hover:underline">
+                    {formatTRDate(c.countedAt)}
+                  </Link>
                   <span className="block text-[11px] text-muted-foreground">
                     {stockCountCode(c.id)}
                     {d != null ? ` · ${d} gün önce` : ""}

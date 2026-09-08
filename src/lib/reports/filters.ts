@@ -21,7 +21,6 @@ export type ReportFilters = {
   end?: string;
   sp?: string;
   status?: string;
-  dept?: string;
   competitor?: string;
   segment?: string;
   kind?: string;
@@ -58,7 +57,6 @@ export function parseFilters(sp: URLSearchParams): ReportFilters {
     end: clean(sp.get("end")),
     sp: clean(sp.get("sp")),
     status: clean(sp.get("status")),
-    dept: clean(sp.get("dept")),
     competitor: clean(sp.get("competitor")),
     segment: clean(sp.get("segment")),
     kind: clean(sp.get("kind")),

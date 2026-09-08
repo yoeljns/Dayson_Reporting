@@ -16,13 +16,11 @@ import {
   VISIT_TYPE_LABELS,
   VISIT_STATUS_LABELS,
   COMPANY_KIND_LABELS,
-  COMPLAINT_TYPE_LABELS,
   COMPLAINT_STATUS_LABELS,
   type ComplaintStatus,
-  type ComplaintType,
 } from "@/lib/enums";
 import type { QuestionWithOptions, VisitAnswer, CompanyContact } from "@/types/db";
-import type { CompanyKind, VisitType } from "@/lib/enums";
+import { SUPPLY_KIND_LABELS, type CompanyKind, type VisitType } from "@/lib/enums";
 import { applicableQuestions } from "@/lib/visit-questions";
 import { visitCode } from "@/lib/codes";
 import { getPhotosFor } from "@/lib/photos/server";
@@ -150,13 +148,13 @@ export default async function VisitDetailPage({
     supabase.from("visit_answers").select("*").eq("visit_id", params.id),
     supabase
       .from("complaints")
-      .select("id, title, type, status")
+      .select("id, title, status")
       .eq("visit_id", params.id)
       .eq("is_draft", false)
       .order("created_at", { ascending: false }),
     supabase
       .from("competitor_observations")
-      .select("id, product_name, observed_price, competitors(name)")
+      .select("id, product_name, observed_price, price_includes_vat, competitors(name)")
       .eq("visit_id", params.id)
       .eq("is_draft", false)
       .order("created_at", { ascending: false }),
@@ -194,6 +192,48 @@ export default async function VisitDetailPage({
   ]);
 
   const allQuestions = (questions as QuestionWithOptions[]) ?? [];
+
+  // Shelf info of the company's previous completed visit → per-category hint
+  // in the products step ("Önceki ziyaret (…): Dayson, Rakip A").
+  const previousProducts: Record<string, { date: string; labels: string[] }> = {};
+  if (company) {
+    const { data: prevVisit } = await supabase
+      .from("visits")
+      .select("id, visit_date")
+      .eq("company_id", company.id)
+      .eq("status", "tamamlandi")
+      .neq("id", visit.id)
+      .lte("visit_date", visit.visit_date as string)
+      .order("visit_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (prevVisit) {
+      const { data: prevAnswers } = await supabase
+        .from("visit_product_answers")
+        .select("category_id, brand_id, custom_name, supply_kind, product_brands(name)")
+        .eq("visit_id", prevVisit.id);
+      for (const a of (prevAnswers as unknown as {
+        category_id: string;
+        brand_id: string | null;
+        custom_name: string | null;
+        supply_kind: string;
+        product_brands: { name: string } | { name: string }[] | null;
+      }[] | null) ?? []) {
+        const b = Array.isArray(a.product_brands) ? a.product_brands[0] : a.product_brands;
+        const label =
+          a.supply_kind === "brand"
+            ? (b?.name ?? a.custom_name ?? null)
+            : (SUPPLY_KIND_LABELS[a.supply_kind as keyof typeof SUPPLY_KIND_LABELS] ?? null);
+        if (!label) continue;
+        const entry = (previousProducts[a.category_id] ??= {
+          date: prevVisit.visit_date as string,
+          labels: [],
+        });
+        if (!entry.labels.includes(label)) entry.labels.push(label);
+      }
+    }
+  }
   // The wizard only offers questions that are active AND apply to this visit
   // (same helper the server uses to validate a completion).
   const applicable = applicableQuestions(
@@ -375,6 +415,7 @@ export default async function VisitDetailPage({
             supply_kind: string;
           }[]) ?? []
         }
+        previousProducts={previousProducts}
         contacts={(contacts as CompanyContact[]) ?? []}
         currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}
@@ -416,12 +457,7 @@ export default async function VisitDetailPage({
                 href={`/sikayet/${c.id}`}
                 className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-accent"
               >
-                <span>
-                  {c.title}{" "}
-                  <span className="text-muted-foreground">
-                    · {COMPLAINT_TYPE_LABELS[c.type as ComplaintType]}
-                  </span>
-                </span>
+                <span>{c.title}</span>
                 <Badge variant={statusVariant[c.status as ComplaintStatus]}>
                   {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
                 </Badge>
@@ -459,7 +495,7 @@ export default async function VisitDetailPage({
                 return (
                   <Link
                     key={sc.id}
-                    href={`/firma/${company?.id}?tab=stok`}
+                    href={`/stok/${sc.id}?return=${encodeURIComponent(`/ziyaret/${visit.id}`)}`}
                     className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-accent"
                   >
                     <span>
@@ -528,17 +564,24 @@ export default async function VisitDetailPage({
                 ? o.competitors[0]
                 : (o.competitors as { name: string } | null);
               return (
-                <div
+                <Link
                   key={o.id}
-                  className="flex items-center justify-between rounded-md border p-2 text-sm"
+                  href={`/rakip/${o.id}?return=${encodeURIComponent(`/ziyaret/${visit.id}`)}`}
+                  className="flex items-center justify-between rounded-md border p-2 text-sm hover:bg-accent"
                 >
                   <span>
                     {comp?.name} · {o.product_name}
                   </span>
                   <span className="font-medium">
                     {formatTRY(o.observed_price)}
+                    {o.observed_price != null && (
+                      <span className="text-xs text-muted-foreground">
+                        {" "}
+                        {o.price_includes_vat === true ? "(KDV dahil)" : o.price_includes_vat === false ? "(KDV hariç)" : ""}
+                      </span>
+                    )}
                   </span>
-                </div>
+                </Link>
               );
             })
           )}

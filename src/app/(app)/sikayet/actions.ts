@@ -2,22 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { deleteDocumentsFor } from "@/lib/documents/server";
+import { todayIso } from "@/lib/week";
 import {
-  COMPLAINT_TYPE_LABELS,
-  type ComplaintType,
-  type ComplaintOwnerDept,
-  type ComplaintStatus,
-} from "@/lib/enums";
+  cleanExtras,
+  loadFormFields,
+  missingRequiredField,
+  fieldOn,
+  type Extras,
+} from "@/lib/form-fields";
+import type { ComplaintStatus } from "@/lib/enums";
 
-// The department is auto-routed from the complaint type (the manual field was
-// removed from the form).
-const DEPT_BY_TYPE: Record<ComplaintType, ComplaintOwnerDept> = {
-  urun_hatasi: "kalite_uretim",
-  fiyat_fatura_hatasi: "muhasebe",
-  servis_hatasi: "satis",
-  teslimat: "lojistik",
-  diger: "satis",
-};
+/** Title shown in lists: first line of the description, trimmed. */
+function complaintTitleFrom(description: string): string {
+  const line = description.split(/\r?\n/).map((s) => s.trim()).find(Boolean) ?? "";
+  return line.length > 80 ? `${line.slice(0, 77)}…` : line || "Şikayet";
+}
 
 export async function saveComplaint(input: {
   id?: string | null;
@@ -27,11 +27,11 @@ export async function saveComplaint(input: {
   complainantName?: string | null;
   complainantPhone?: string | null;
   visitId?: string | null;
-  type: ComplaintType;
   productCategoryId?: string | null;
   description: string;
-  priority: number;
-  dueDate?: string | null;
+  /** YYYY-MM-DD "tespit tarihi"; defaults to today. */
+  detectedAt?: string | null;
+  extras?: Extras | null;
   isDraft: boolean;
 }): Promise<{ id?: string; error?: string }> {
   const supabase = createClient();
@@ -40,58 +40,64 @@ export async function saveComplaint(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
 
+  const fields = await loadFormFields(supabase, "sikayet");
   const description = input.description.trim();
   const complainantName = input.complainantName?.trim() || null;
+  const detectedAt =
+    input.detectedAt && /^\d{4}-\d{2}-\d{2}$/.test(input.detectedAt) && input.detectedAt <= todayIso()
+      ? input.detectedAt
+      : todayIso();
+  const extras = cleanExtras(fields, input.extras);
 
   if (input.isDraft) {
     // A draft only needs something worth resuming.
-    if (
-      !description &&
-      !input.companyId &&
-      !complainantName &&
-      !input.productCategoryId
-    ) {
+    if (!description && !input.companyId && !complainantName && !input.productCategoryId) {
       return { error: "Taslak kaydetmek için en az bir alan doldurun." };
     }
   } else {
     if (!description) return { error: "Açıklama zorunludur." };
     // Need at least one way to identify who/what the complaint is about.
-    if (!input.companyId && !complainantName) {
+    if (!input.companyId && !complainantName && fieldOn(fields, "company")) {
       return { error: "Distribütör seçin ya da şikayet eden kişiyi yazın." };
     }
+    const missing = missingRequiredField(
+      fields,
+      {
+        complainant_name: complainantName,
+        complainant_phone: input.complainantPhone?.trim() || null,
+        product_category_id: input.productCategoryId || null,
+        description,
+        detected_at: detectedAt,
+        company: input.companyId || null,
+      },
+      extras
+    );
+    if (missing) return { error: `"${missing.label_tr}" alanı zorunludur.` };
   }
-
-  // Auto-generate a title from the type (+ product) — the title field was removed.
-  let productLabel: string | null = null;
-  if (input.productCategoryId) {
-    const { data: cat } = await supabase
-      .from("product_categories")
-      .select("label_tr")
-      .eq("id", input.productCategoryId)
-      .maybeSingle();
-    productLabel = (cat as { label_tr: string } | null)?.label_tr ?? null;
-  }
-  const title =
-    COMPLAINT_TYPE_LABELS[input.type] +
-    (productLabel ? ` – ${productLabel}` : "");
 
   const row = {
     company_id: input.companyId || null,
     complainant_name: complainantName,
     complainant_phone: input.complainantPhone?.trim() || null,
     visit_id: input.visitId || null,
-    type: input.type,
     product_category_id: input.productCategoryId || null,
-    owner_dept: DEPT_BY_TYPE[input.type] ?? "satis",
-    title,
+    title: complaintTitleFrom(description),
     description,
-    priority: input.priority,
-    due_date: input.dueDate || null,
+    detected_at: detectedAt,
+    extras,
     is_draft: input.isDraft,
   };
 
   let id = input.id || null;
   if (id) {
+    const { data: ex } = await supabase
+      .from("complaints")
+      .select("reported_by")
+      .eq("id", id)
+      .maybeSingle();
+    if (!ex) return { error: "Şikayet bulunamadı." };
+    if (ex.reported_by !== user.id)
+      return { error: "Yalnızca kendi şikayetinizi düzenleyebilirsiniz." };
     const { error } = await supabase
       .from("complaints")
       .update({ ...row, updated_at: new Date().toISOString() })
@@ -144,8 +150,44 @@ export async function saveComplaint(input: {
   }
 
   revalidatePath("/sikayetler");
+  revalidatePath(`/sikayet/${id}`);
+  revalidatePath("/admin/sikayetler");
   return { id: id ?? undefined };
 }
+
+/** Delete a complaint (reporter or manager) together with its attachments. */
+export async function deleteComplaint(input: {
+  complaintId: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+  const { data: c } = await supabase
+    .from("complaints")
+    .select("id, reported_by, company_id")
+    .eq("id", input.complaintId)
+    .maybeSingle();
+  if (!c) return { error: "Şikayet bulunamadı." };
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const isManager = me?.role === "manager" || me?.role === "admin";
+  if (c.reported_by !== user.id && !isManager)
+    return { error: "Yalnızca kendi şikayetinizi silebilirsiniz." };
+
+  await deleteDocumentsFor("complaint", c.id);
+  const { error } = await supabase.from("complaints").delete().eq("id", c.id);
+  if (error) return { error: error.message };
+  revalidatePath("/sikayetler");
+  revalidatePath("/admin/sikayetler");
+  revalidatePath("/admin");
+  if (c.company_id) {
+    revalidatePath(`/firma/${c.company_id}`);
+    revalidatePath(`/admin/bayi/${c.company_id}`);
+  }
+  return { ok: true };
+}
+
 
 export async function changeComplaintStatus(input: {
   complaintId: string;

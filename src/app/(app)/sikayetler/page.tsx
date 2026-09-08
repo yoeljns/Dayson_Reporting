@@ -4,11 +4,8 @@ import { requireProfile } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  COMPLAINT_TYPE_LABELS,
-  COMPLAINT_STATUS_LABELS,
-  type ComplaintStatus,
-} from "@/lib/enums";
+import { COMPLAINT_STATUS_LABELS, type ComplaintStatus } from "@/lib/enums";
+import { formatTRDate } from "@/lib/week";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -29,7 +26,7 @@ export default async function ComplaintsListPage() {
   const { data: complaints } = await supabase
     .from("complaints")
     .select(
-      "id, title, type, status, is_draft, created_at, complainant_name, companies(name)"
+      "id, title, status, is_draft, created_at, detected_at, complainant_name, companies(name)"
     )
     .or(`is_draft.eq.false,reported_by.eq.${profile.id}`)
     .order("created_at", { ascending: false })
@@ -66,7 +63,7 @@ export default async function ComplaintsListPage() {
                       <div className="font-medium">{c.title}</div>
                       <div className="text-xs text-muted-foreground">
                         {company?.name || c.complainant_name || "—"} ·{" "}
-                        {COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]}
+                        {formatTRDate(((c.detected_at as string | null) ?? c.created_at).slice(0, 10))}
                       </div>
                     </div>
                     {c.is_draft ? (

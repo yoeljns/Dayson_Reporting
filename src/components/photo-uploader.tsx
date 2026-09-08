@@ -1,11 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, ImagePlus, Loader2, X, AlertTriangle, CloudOff } from "lucide-react";
+import { Camera, FileText, ImagePlus, Loader2, X, AlertTriangle, CloudOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { PHOTO_BUCKET, PHOTO_MAX_BYTES, type DocumentRefTable } from "@/lib/enums";
+import {
+  PDF_MAX_BYTES,
+  PDF_MIME,
+  PHOTO_BUCKET,
+  PHOTO_MAX_BYTES,
+  isPdfMime,
+  type DocumentRefTable,
+} from "@/lib/enums";
 import { newId } from "@/lib/uuid";
 import { resizePhoto } from "@/lib/photos/resize";
 import { photoPath } from "@/lib/photos/path";
@@ -18,8 +25,12 @@ import {
 export type UploadedPhoto = PhotoAttachInput & {
   status: "uploading" | "uploaded" | "attached" | "queued" | "error";
   previewUrl: string;
+  /** Original file name (shown for PDFs, which have no thumbnail). */
+  name?: string;
   error?: string;
 };
+
+const isPdfFile = (f: File) => isPdfMime(f.type) || /\.pdf$/i.test(f.name);
 
 /** Upload one already-resized blob straight to Storage via a signed URL. */
 export async function uploadPhotoBlob(input: {
@@ -70,6 +81,7 @@ export function PhotoUploader({
   onOffline,
   max = 6,
   compact = false,
+  allowPdf = false,
 }: {
   refTable: DocumentRefTable;
   refId: string;
@@ -84,6 +96,8 @@ export function PhotoUploader({
   }) => Promise<void>;
   max?: number;
   compact?: boolean;
+  /** Also accept PDF files from the gallery / file picker (price lists). */
+  allowPdf?: boolean;
 }) {
   const { toast } = useToast();
   const camRef = useRef<HTMLInputElement>(null);
@@ -104,7 +118,7 @@ export function PhotoUploader({
     if (!files || files.length === 0) return;
     const room = max - valueRef.current.length;
     if (room <= 0) {
-      toast(`En fazla ${max} fotoğraf eklenebilir`, "warn");
+      toast(`En fazla ${max} ${allowPdf ? "dosya" : "fotoğraf"} eklenebilir`, "warn");
       return;
     }
     setBusy(true);
@@ -113,13 +127,27 @@ export function PhotoUploader({
       const documentId = newId();
       let blob: Blob;
       let mime: string;
-      try {
-        ({ blob, mime } = await resizePhoto(file, PHOTO_MAX_BYTES));
-      } catch (e) {
-        toast(e instanceof Error ? e.message : "Fotoğraf okunamadı", "warn");
-        continue;
+      const pdf = isPdfFile(file);
+      if (pdf) {
+        if (!allowPdf) {
+          toast("Bu alana yalnızca fotoğraf eklenebilir", "warn");
+          continue;
+        }
+        if (file.size > PDF_MAX_BYTES) {
+          toast(`PDF ${Math.round(PDF_MAX_BYTES / 1024 / 1024)} MB sınırını aşıyor`, "warn");
+          continue;
+        }
+        blob = file;
+        mime = PDF_MIME;
+      } else {
+        try {
+          ({ blob, mime } = await resizePhoto(file, PHOTO_MAX_BYTES));
+        } catch (e) {
+          toast(e instanceof Error ? e.message : "Fotoğraf okunamadı", "warn");
+          continue;
+        }
       }
-      const previewUrl = URL.createObjectURL(blob);
+      const previewUrl = pdf ? "" : URL.createObjectURL(blob);
       const path = photoPath(refTable, refId, documentId, mime);
       const entry: UploadedPhoto = {
         documentId,
@@ -128,6 +156,7 @@ export function PhotoUploader({
         sizeBytes: blob.size,
         status: "uploading",
         previewUrl,
+        name: pdf ? file.name : undefined,
       };
       const next = [...valueRef.current, entry];
       valueRef.current = next;
@@ -206,7 +235,7 @@ export function PhotoUploader({
       <input
         ref={galRef}
         type="file"
-        accept="image/*"
+        accept={allowPdf ? "image/*,application/pdf" : "image/*"}
         multiple
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}
@@ -235,7 +264,7 @@ export function PhotoUploader({
           disabled={busy || value.length >= max}
           onClick={() => galRef.current?.click()}
         >
-          <ImagePlus className="mr-2 h-4 w-4" /> Galeriden seç
+          <ImagePlus className="mr-2 h-4 w-4" /> {allowPdf ? "Galeri / PDF" : "Galeriden seç"}
         </Button>
       </div>
 
@@ -243,14 +272,28 @@ export function PhotoUploader({
         <div className="flex flex-wrap gap-2">
           {value.map((p) => (
             <div key={p.documentId} className="relative h-20 w-20 shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={p.previewUrl}
-                alt=""
-                className={`h-20 w-20 rounded-md border object-cover ${
-                  p.status === "uploading" ? "opacity-50" : ""
-                }`}
-              />
+              {isPdfMime(p.mime) ? (
+                <div
+                  className={`flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border bg-muted p-1 text-center ${
+                    p.status === "uploading" ? "opacity-50" : ""
+                  }`}
+                  title={p.name}
+                >
+                  <FileText className="h-6 w-6 text-muted-foreground" />
+                  <span className="line-clamp-2 w-full break-all text-[10px] leading-tight text-muted-foreground">
+                    {p.name ?? "PDF"}
+                  </span>
+                </div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={p.previewUrl}
+                  alt=""
+                  className={`h-20 w-20 rounded-md border object-cover ${
+                    p.status === "uploading" ? "opacity-50" : ""
+                  }`}
+                />
+              )}
               {p.status === "uploading" && (
                 <Loader2 className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 animate-spin text-primary" />
               )}

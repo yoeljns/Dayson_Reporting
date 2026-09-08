@@ -209,6 +209,8 @@ export interface Complaint {
   description: string;
   priority: number;
   due_date: string | null;
+  detected_at: string | null;
+  extras: Record<string, string | number | boolean | null>;
   resolved_at: string | null;
   is_draft: boolean;
   created_at: string;
@@ -251,9 +253,12 @@ export interface CompetitorObservation {
   product_name: string;
   observed_price: number | null;
   currency: string;
+  /** true = KDV dahil, false = hariç, null = bilinmiyor */
+  price_includes_vat: boolean | null;
   observed_at: string;
   city: string | null;
   note: string | null;
+  extras: Record<string, string | number | boolean | null>;
   is_draft: boolean;
   created_at: string;
 }
@@ -279,7 +284,7 @@ export interface ImportRowError {
 
 export interface Document {
   id: string;
-  kind: "photo";
+  kind: "photo" | "file";
   storage_path: string;
   mime: string;
   size_bytes: number | null;
@@ -349,6 +354,7 @@ export interface StockCount {
   salesperson_id: string;
   counted_at: string;
   note: string | null;
+  extras: Record<string, string | number | boolean | null>;
   created_at: string;
   updated_at: string;
 }

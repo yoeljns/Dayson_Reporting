@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,7 +24,7 @@ export default async function CompetitorMapPage({
   let query = supabase
     .from("competitor_observations")
     .select(
-      "id, product_name, observed_price, currency, observed_at, city, note, competitor_id, competitor_product_id, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
+      "id, product_name, observed_price, price_includes_vat, currency, observed_at, city, note, competitor_id, competitor_product_id, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
     )
     .eq("is_draft", false)
     .order("observed_at", { ascending: false })
@@ -115,7 +116,11 @@ export default async function CompetitorMapPage({
                     : (o.salesperson as { full_name: string } | null);
                   return (
                     <tr key={o.id} className="border-b">
-                      <td className="p-2 whitespace-nowrap">{o.observed_at}</td>
+                      <td className="p-2 whitespace-nowrap">
+                        <Link href={`/rakip/${o.id}`} className="hover:underline">
+                          {o.observed_at}
+                        </Link>
+                      </td>
                       <td className="p-2">{comp?.name}</td>
                       <td className="p-2">
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -144,6 +149,11 @@ export default async function CompetitorMapPage({
                       </td>
                       <td className="p-2 text-right whitespace-nowrap">
                         {formatTRY(o.observed_price)}
+                        {o.observed_price != null && (
+                          <span className="block text-[11px] text-muted-foreground">
+                            {o.price_includes_vat === true ? "KDV dahil" : o.price_includes_vat === false ? "KDV hariç" : "KDV ?"}
+                          </span>
+                        )}
                       </td>
                       <td className="p-2">{o.city ?? "—"}</td>
                       <td className="p-2">{company?.name ?? "—"}</td>

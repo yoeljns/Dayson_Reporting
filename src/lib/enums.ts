@@ -192,6 +192,13 @@ export const DOCUMENT_REF_TABLES = [
 export type DocumentRefTable = (typeof DOCUMENT_REF_TABLES)[number];
 export const PHOTO_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
+/** PDF attachments (price lists etc.) — stored in the same bucket, kind = "file". */
+export const PDF_MIME = "application/pdf";
+export const PDF_MAX_BYTES = 15 * 1024 * 1024;
+export const DOCUMENT_MIME_TYPES = [...PHOTO_MIME_TYPES, PDF_MIME] as const;
+export const isPdfMime = (mime: string) => mime === PDF_MIME;
+/** Per-mime size ceiling used by the upload ticket and the bucket limit. */
+export const maxBytesForMime = (mime: string) => (isPdfMime(mime) ? PDF_MAX_BYTES : PHOTO_MAX_BYTES);
 export const PHOTO_BUCKET = "field-photos";
 
 export const SUPPLY_KINDS = ["brand", "own_production", "export"] as const;

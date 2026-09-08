@@ -1,6 +1,12 @@
 /** Storage object path for one photo: `<refTable>/<refId>/<documentId>.<ext>`. */
 export function extForMime(mime: string) {
-  return mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+  return mime === "image/png"
+    ? "png"
+    : mime === "image/webp"
+      ? "webp"
+      : mime === "application/pdf"
+        ? "pdf"
+        : "jpg";
 }
 export function photoPath(
   refTable: string,

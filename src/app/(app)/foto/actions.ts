@@ -6,10 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureStorage, PHOTO_SERVICE_MISSING } from "@/lib/storage";
 import { photoPath } from "@/lib/photos/path";
 import {
+  DOCUMENT_MIME_TYPES,
   DOCUMENT_REF_TABLES,
   PHOTO_BUCKET,
-  PHOTO_MAX_BYTES,
-  PHOTO_MIME_TYPES,
+  isPdfMime,
+  maxBytesForMime,
   type DocumentRefTable,
 } from "@/lib/enums";
 
@@ -84,10 +85,12 @@ export async function createPhotoUploadTicket(input: {
 }): Promise<{ path?: string; token?: string; error?: string }> {
   if (!validRef(input.refTable, input.refId) || !UUID_RE.test(input.documentId))
     return { error: "Geçersiz kayıt." };
-  if (!(PHOTO_MIME_TYPES as readonly string[]).includes(input.mime))
-    return { error: "Yalnızca JPEG, PNG veya WebP fotoğraf yüklenebilir." };
-  if (input.sizeBytes > PHOTO_MAX_BYTES)
-    return { error: "Fotoğraf 8 MB sınırını aşıyor." };
+  if (!(DOCUMENT_MIME_TYPES as readonly string[]).includes(input.mime))
+    return { error: "Yalnızca JPEG, PNG, WebP fotoğraf veya PDF yüklenebilir." };
+  if (input.sizeBytes > maxBytesForMime(input.mime)) {
+    const mb = Math.round(maxBytesForMime(input.mime) / 1024 / 1024);
+    return { error: `${isPdfMime(input.mime) ? "PDF" : "Fotoğraf"} ${mb} MB sınırını aşıyor.` };
+  }
 
   const supabase = createClient();
   const {
@@ -141,11 +144,12 @@ export async function attachPhotos(input: {
   for (const p of input.photos) {
     if (!UUID_RE.test(p.documentId) || !p.path.startsWith(prefix))
       return { error: "Geçersiz fotoğraf yolu." };
-    if (!(PHOTO_MIME_TYPES as readonly string[]).includes(p.mime))
-      return { error: "Geçersiz fotoğraf türü." };
+    if (!(DOCUMENT_MIME_TYPES as readonly string[]).includes(p.mime))
+      return { error: "Geçersiz dosya türü." };
+    if (p.sizeBytes > maxBytesForMime(p.mime)) return { error: "Dosya boyut sınırını aşıyor." };
     const { error } = await supabase.from("documents").insert({
       id: p.documentId,
-      kind: "photo",
+      kind: isPdfMime(p.mime) ? "file" : "photo",
       storage_path: p.path,
       mime: p.mime,
       size_bytes: p.sizeBytes,
@@ -193,6 +197,12 @@ function revalidateRef(refTable: string, refId: string) {
     case "complaint":
       revalidatePath(`/sikayet/${refId}`);
       revalidatePath(`/admin/sikayetler/${refId}`);
+      break;
+    case "competitor_observation":
+      revalidatePath(`/rakip/${refId}`);
+      break;
+    case "stock_count":
+      revalidatePath(`/stok/${refId}`);
       break;
     default:
       break;

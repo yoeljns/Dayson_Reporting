@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasServiceKey } from "@/lib/supabase/env";
-import { PHOTO_BUCKET, PHOTO_MAX_BYTES, PHOTO_MIME_TYPES } from "@/lib/enums";
+import { DOCUMENT_MIME_TYPES, PDF_MAX_BYTES, PHOTO_BUCKET } from "@/lib/enums";
 
 let ensured: Promise<boolean> | null = null;
 
@@ -14,13 +14,28 @@ export function ensureStorage(): Promise<boolean> {
   if (!ensured) {
     ensured = (async () => {
       const admin = createAdminClient();
-      const { data } = await admin.storage.getBucket(PHOTO_BUCKET);
-      if (data) return true;
-      const { error } = await admin.storage.createBucket(PHOTO_BUCKET, {
+      const opts = {
         public: false,
-        fileSizeLimit: PHOTO_MAX_BYTES,
-        allowedMimeTypes: [...PHOTO_MIME_TYPES],
-      });
+        fileSizeLimit: PDF_MAX_BYTES,
+        allowedMimeTypes: [...DOCUMENT_MIME_TYPES],
+      };
+      const { data } = await admin.storage.getBucket(PHOTO_BUCKET);
+      if (data) {
+        // Existing buckets were created photo-only; widen once per process.
+        const want = new Set<string>(opts.allowedMimeTypes);
+        const have = new Set<string>(data.allowed_mime_types ?? []);
+        const same =
+          data.allowed_mime_types &&
+          want.size === have.size &&
+          [...want].every((m) => have.has(m)) &&
+          data.file_size_limit === opts.fileSizeLimit;
+        if (!same) {
+          const { error } = await admin.storage.updateBucket(PHOTO_BUCKET, opts);
+          if (error) console.error("[storage] bucket güncellenemedi:", error.message);
+        }
+        return true;
+      }
+      const { error } = await admin.storage.createBucket(PHOTO_BUCKET, opts);
       if (error && !/already exists/i.test(error.message)) {
         throw error;
       }

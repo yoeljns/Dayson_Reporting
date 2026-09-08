@@ -167,7 +167,7 @@ export default async function AnalizPage({
       {/* 3) Complaints */}
       <Section
         title="Şikayetler"
-        note="Şikayetleri ne kadar sürede kapatıyoruz ve hangi bölüm geride kalıyor."
+        note="Şikayetleri ne kadar sürede kapatıyoruz, kaçı açık ve hangi üründen geliyor."
         action={
           <ExcelLink href={`/api/admin/raporlar?type=sikayet&start=${start}&end=${end}`} />
         }
@@ -183,47 +183,22 @@ export default async function AnalizPage({
             tone="plain"
           />
           <BigStat
-            label="Zamanında kapanan"
-            value={complaints.onTimePct === null ? "—" : `%${complaints.onTimePct}`}
-            tone={
-              complaints.onTimePct !== null && complaints.onTimePct < 70
-                ? "bad"
-                : "good"
-            }
+            label="Şu an açık"
+            value={complaints.openNow}
+            tone={complaints.openNow > 0 ? "plain" : "good"}
           />
           <BigStat
-            label="Geciken açık"
-            value={complaints.overdueOpen}
-            tone={complaints.overdueOpen > 0 ? "bad" : "good"}
+            label="14+ gündür açık"
+            value={complaints.openOver14}
+            tone={complaints.openOver14 > 0 ? "bad" : "good"}
           />
         </div>
 
-        {complaints.byDept.length === 0 ? (
+        {complaints.openedCount === 0 ? (
           <Empty>Bu dönemde şikayet kaydı yok.</Empty>
         ) : (
-          <Table headers={["Bölüm", "Açılan", "Çözülen", "Ort. gün", "Geciken"]}>
-            {complaints.byDept.map((d) => (
-              <tr key={d.label} className="border-b last:border-0">
-                <td className="p-2 font-medium">{d.label}</td>
-                <td className="p-2 text-right">{d.opened}</td>
-                <td className="p-2 text-right">{d.resolved}</td>
-                <td className="p-2 text-right">{d.avgDays ?? "—"}</td>
-                <td
-                  className={cn(
-                    "p-2 text-right",
-                    d.overdue > 0 && "font-semibold text-destructive"
-                  )}
-                >
-                  {d.overdue}
-                </td>
-              </tr>
-            ))}
-          </Table>
-        )}
-
-        {complaints.byType.length > 0 && (
-          <Table headers={["Şikayet türü", "Adet", "Pay"]}>
-            {complaints.byType.map((t) => (
+          <Table headers={["Pazarlamacı", "Açılan", "Pay"]}>
+            {complaints.byReporter.map((t) => (
               <tr key={t.label} className="border-b last:border-0">
                 <td className="p-2 font-medium">{t.label}</td>
                 <td className="p-2 text-right">{t.count}</td>

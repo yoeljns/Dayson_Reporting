@@ -143,7 +143,6 @@ export default async function ReportsPage({
               end: initEnd,
               sp: filters.sp ?? "",
               status: filters.status ?? "",
-              dept: filters.dept ?? "",
               competitor: filters.competitor ?? "",
               segment: filters.segment ?? "",
               kind: filters.kind ?? "",

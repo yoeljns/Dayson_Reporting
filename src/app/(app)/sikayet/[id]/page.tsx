@@ -7,13 +7,14 @@ import { ComplaintStatusChanger } from "@/components/complaint-status-changer";
 import { RecordPhotos } from "@/components/visit-photos";
 import { getPhotosFor } from "@/lib/photos/server";
 import { complaintCode } from "@/lib/codes";
-import {
-  COMPLAINT_TYPE_LABELS,
-  COMPLAINT_STATUS_LABELS,
-  COMPLAINT_OWNER_DEPT_LABELS,
-  COMPLAINT_PRIORITY_LABELS,
-  type ComplaintStatus,
-} from "@/lib/enums";
+import { COMPLAINT_STATUS_LABELS, type ComplaintStatus } from "@/lib/enums";
+import Link from "next/link";
+import { Pencil } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DeleteRecordButton } from "@/components/delete-record-button";
+import { ExtrasList } from "@/components/extra-fields";
+import { loadFormFields, type Extras } from "@/lib/form-fields";
+import { formatTRDate } from "@/lib/week";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -36,7 +37,7 @@ export default async function ComplaintDetailPage({
   const { data: c } = await supabase
     .from("complaints")
     .select(
-      "id, type, owner_dept, status, title, description, priority, due_date, created_at, is_draft, complainant_name, complainant_phone, reported_by, companies(name), reporter:reported_by(full_name)"
+      "id, status, title, description, detected_at, extras, product_category_id, created_at, is_draft, complainant_name, complainant_phone, reported_by, companies(name), reporter:reported_by(full_name), product_categories(label_tr)"
     )
     .eq("id", params.id)
     .single();
@@ -44,14 +45,19 @@ export default async function ComplaintDetailPage({
   // Drafts have no timeline/status yet — they are resumed from the form instead.
   if (!c || c.is_draft) notFound();
 
-  const [{ data: events }, photos] = await Promise.all([
+  const [{ data: events }, photos, fields] = await Promise.all([
     supabase
       .from("complaint_events")
       .select("id, from_status, to_status, note, created_at, actor:actor_id(full_name)")
       .eq("complaint_id", params.id)
       .order("created_at", { ascending: true }),
     getPhotosFor("complaint", params.id),
+    loadFormFields(supabase, "sikayet"),
   ]);
+  const isOwner = c.reported_by === profile.id;
+  const productLabel = (Array.isArray(c.product_categories)
+    ? c.product_categories[0]
+    : (c.product_categories as { label_tr: string } | null))?.label_tr;
   const canEditPhotos =
     c.reported_by === profile.id || profile.role !== "salesperson";
 
@@ -73,30 +79,29 @@ export default async function ComplaintDetailPage({
             {c.complainant_name || company?.name || "—"}
           </p>
         </div>
-        <Badge variant={statusVariant[c.status as ComplaintStatus]}>
-          {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
-        </Badge>
+        <div className="flex flex-col items-end gap-1">
+          <Badge variant={statusVariant[c.status as ComplaintStatus]}>
+            {COMPLAINT_STATUS_LABELS[c.status as ComplaintStatus]}
+          </Badge>
+          {(isOwner || profile.role !== "salesperson") && (
+            <div className="flex items-center gap-1 print:hidden">
+              {isOwner && (
+                <Link href={`/sikayet/yeni?edit=${c.id}`}>
+                  <Button variant="outline" size="sm">
+                    <Pencil className="mr-1 h-4 w-4" /> Düzenle
+                  </Button>
+                </Link>
+              )}
+              <DeleteRecordButton kind="complaint" id={c.id} redirectTo="/sikayetler" />
+            </div>
+          )}
+        </div>
       </div>
 
       <Card>
         <CardContent className="space-y-2 pt-4 text-sm">
-          <Row
-            label="Tip"
-            value={COMPLAINT_TYPE_LABELS[c.type as keyof typeof COMPLAINT_TYPE_LABELS]}
-          />
-          <Row
-            label="Departman"
-            value={
-              COMPLAINT_OWNER_DEPT_LABELS[
-                c.owner_dept as keyof typeof COMPLAINT_OWNER_DEPT_LABELS
-              ]
-            }
-          />
-          <Row
-            label="Öncelik"
-            value={COMPLAINT_PRIORITY_LABELS[c.priority] ?? String(c.priority)}
-          />
-          <Row label="Termin" value={c.due_date ?? "—"} />
+          <Row label="Tespit tarihi" value={c.detected_at ? formatTRDate(c.detected_at as string) : "—"} />
+          {productLabel && <Row label="Ürün" value={productLabel} />}
           <Row label="Şikayet eden" value={c.complainant_name ?? "—"} />
           <Row label="Telefon" value={c.complainant_phone ?? "—"} />
           <Row label="Bağlı distribütör" value={company?.name ?? "—"} />
@@ -105,6 +110,7 @@ export default async function ComplaintDetailPage({
             <div className="text-muted-foreground">Açıklama</div>
             <p className="whitespace-pre-wrap">{c.description}</p>
           </div>
+          <ExtrasList fields={fields} extras={c.extras as Extras | null} className="pt-2" />
           <div className="pt-2">
             <RecordPhotos
               refTable="complaint"

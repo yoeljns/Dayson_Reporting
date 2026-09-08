@@ -24,10 +24,8 @@ import {
   VISIT_TYPE_LABELS,
   COMPANY_KIND_LABELS,
   DEBT_STATUS_LABELS,
-  COMPLAINT_TYPE_LABELS,
   COMPLAINT_STATUS_LABELS,
   type ComplaintStatus,
-  type ComplaintType,
   type DebtStatus,
   type VisitType,
   type VisitStatus,
@@ -103,7 +101,7 @@ export default async function DealerFilePage({
     supabase
       .from("complaints")
       .select(
-        "id, title, description, type, status, priority, due_date, resolved_at, created_at"
+        "id, title, description, status, detected_at, resolved_at, created_at"
       )
       .eq("company_id", companyId)
       .eq("is_draft", false)
@@ -112,7 +110,7 @@ export default async function DealerFilePage({
     supabase
       .from("competitor_observations")
       .select(
-        "id, product_name, observed_price, currency, observed_at, note, competitors(name)"
+        "id, product_name, observed_price, price_includes_vat, currency, observed_at, note, competitors(name)"
       )
       .eq("company_id", companyId)
       .eq("is_draft", false)
@@ -588,9 +586,8 @@ export default async function DealerFilePage({
                     </Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {COMPLAINT_TYPE_LABELS[c.type as ComplaintType]} ·{" "}
                     {formatTRDate(c.created_at.slice(0, 10))}
-                    {c.due_date ? ` · Termin: ${formatTRDate(c.due_date)}` : ""}
+                    {c.detected_at ? ` · Tespit: ${formatTRDate(c.detected_at)}` : ""}
                   </p>
                   {c.description && (
                     <p className="whitespace-pre-wrap">{c.description}</p>
@@ -637,17 +634,17 @@ export default async function DealerFilePage({
               <ul className="space-y-2">
                 {observations.map((o) => (
                   <li key={o.id}>
-                    <div className="font-medium">
+                    <Link href={`/rakip/${o.id}`} className="font-medium hover:underline">
                       {
                         one(o.competitors as unknown as { name: string } | null)
                           ?.name
                       }{" "}
                       —{" "}
                       {o.product_name}
-                    </div>
+                    </Link>
                     <div className="text-sm text-muted-foreground">
                       {o.observed_price != null
-                        ? formatTRY(o.observed_price)
+                        ? `${formatTRY(o.observed_price)} ${o.price_includes_vat === true ? "(KDV dahil)" : o.price_includes_vat === false ? "(KDV hariç)" : ""}`
                         : "Fiyat yok"}
                       {o.observed_at
                         ? ` · ${formatTRDate(o.observed_at.slice(0, 10))}`

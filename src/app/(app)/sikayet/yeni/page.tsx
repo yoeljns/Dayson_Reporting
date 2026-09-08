@@ -1,374 +1,93 @@
-"use client";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { requireProfile } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { loadFormFields, type Extras } from "@/lib/form-fields";
+import { ComplaintForm, type ComplaintFormInitial } from "@/components/complaint-form";
 
-import { Suspense, useEffect, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { CompanyPicker, type PickedCompany } from "@/components/company-picker";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  COMPLAINT_TYPES,
-  COMPLAINT_TYPE_LABELS,
-  COMPLAINT_PRIORITIES,
-  COMPLAINT_PRIORITY_LABELS,
-  type ComplaintType,
-} from "@/lib/enums";
-import { saveComplaint } from "../actions";
-import { attachPhotos } from "@/app/(app)/foto/actions";
-import { PhotoUploader, type UploadedPhoto } from "@/components/photo-uploader";
-import { useToast } from "@/components/ui/toast";
-import { newId } from "@/lib/uuid";
-import { complaintCode } from "@/lib/codes";
-import {
-  queueForm,
-  queuePhotoBlob,
-  isOnline,
-  isNetworkError,
-  OFFLINE_SAVED_MSG,
-} from "@/lib/offline";
+const one = <T,>(v: T | T[] | null | undefined): T | null =>
+  Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
 
-export default function NewComplaintPage() {
-  return (
-    <Suspense>
-      <KeyedComplaintForm />
-    </Suspense>
-  );
-}
+/**
+ * New complaint, resumed draft (?draft=) or edit of a finalized complaint
+ * (?edit=). Fields come from the admin-managed catalog.
+ */
+export default async function NewComplaintPage({
+  searchParams,
+}: {
+  searchParams: { company?: string; visit?: string; draft?: string; edit?: string; return?: string };
+}) {
+  const profile = await requireProfile();
+  const supabase = createClient();
+  const editId = searchParams.edit || searchParams.draft || null;
 
-// Remount the form when the ?draft target changes so no state leaks between a
-// resumed draft and a fresh complaint (same route → React would otherwise keep
-// the component mounted).
-function KeyedComplaintForm() {
-  const draftId = useSearchParams().get("draft");
-  return <NewComplaintForm key={draftId ?? "new"} />;
-}
+  const [fields, { data: cats }, presetRes, visitRes, existingRes] = await Promise.all([
+    loadFormFields(supabase, "sikayet"),
+    supabase.from("product_categories").select("id, label_tr").eq("is_active", true).order("sort_order"),
+    searchParams.company
+      ? supabase.from("companies").select("id, name").eq("id", searchParams.company).maybeSingle()
+      : Promise.resolve({ data: null }),
+    searchParams.visit
+      ? supabase.from("visits").select("visit_date").eq("id", searchParams.visit).maybeSingle()
+      : Promise.resolve({ data: null }),
+    editId
+      ? supabase
+          .from("complaints")
+          .select(
+            "id, reported_by, is_draft, company_id, complainant_name, complainant_phone, product_category_id, description, detected_at, extras, visit_id, companies(name)"
+          )
+          .eq("id", editId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
 
-function NewComplaintForm() {
-  const router = useRouter();
-  const { toast } = useToast();
-  const params = useSearchParams();
-  const presetCompany = params.get("company");
-  const visitId = params.get("visit");
-  const draftId = params.get("draft");
-  const returnTo = params.get("return");
-
-  // Fixed for the life of the form: a retried submit updates, never duplicates.
-  const [clientId] = useState(() => newId());
-  const [editId, setEditId] = useState<string | null>(null);
-  const [photos, setPhotos] = useState<UploadedPhoto[]>([]);
-  const [company, setCompany] = useState<PickedCompany | null>(null);
-  const [complainantName, setComplainantName] = useState("");
-  const [complainantPhone, setComplainantPhone] = useState("");
-  const [type, setType] = useState<ComplaintType>("urun_hatasi");
-  const [categories, setCategories] = useState<
-    { id: string; label_tr: string }[]
-  >([]);
-  const [productCategoryId, setProductCategoryId] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState(2);
-  const [dueDate, setDueDate] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  // Product catalog for "hangi ürün".
-  useEffect(() => {
-    const supabase = createClient();
-    supabase
-      .from("product_categories")
-      .select("id, label_tr")
-      .eq("is_active", true)
-      .order("sort_order")
-      .then(({ data }) =>
-        setCategories((data as { id: string; label_tr: string }[]) ?? [])
-      );
-  }, []);
-
-  // Resume a saved draft: load its fields into the form.
-  useEffect(() => {
-    if (!draftId) return;
-    const supabase = createClient();
-    supabase
-      .from("complaints")
-      .select(
-        "id, company_id, complainant_name, complainant_phone, type, product_category_id, description, priority, due_date, companies(name)"
-      )
-      .eq("id", draftId)
-      .eq("is_draft", true)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!data) return;
-        setEditId(data.id as string);
-        setComplainantName((data.complainant_name as string | null) ?? "");
-        setComplainantPhone((data.complainant_phone as string | null) ?? "");
-        setType(data.type as ComplaintType);
-        setProductCategoryId((data.product_category_id as string | null) ?? "");
-        setDescription((data.description as string | null) ?? "");
-        setPriority((data.priority as number | null) ?? 2);
-        setDueDate((data.due_date as string | null) ?? "");
-        const co = Array.isArray(data.companies)
-          ? data.companies[0]
-          : (data.companies as { name: string } | null);
-        if (data.company_id && co)
-          setCompany({ id: data.company_id as string, name: co.name });
-      });
-  }, [draftId]);
-
-  // Preselect the company when arriving from a visit.
-  useEffect(() => {
-    if (!presetCompany) return;
-    const supabase = createClient();
-    supabase
-      .from("companies")
-      .select("id, name")
-      .eq("id", presetCompany)
-      .single()
-      .then(({ data }) => {
-        if (data) setCompany({ id: data.id, name: data.name });
-      });
-  }, [presetCompany]);
-
-  function submit(isDraft: boolean) {
-    setError(null);
-    if (isDraft) {
-      if (
-        !description.trim() &&
-        !company &&
-        !complainantName.trim() &&
-        !productCategoryId
-      ) {
-        setError("Taslak kaydetmek için en az bir alan doldurun.");
-        return;
-      }
-    } else {
-      if (!description.trim()) {
-        setError("Açıklama zorunludur.");
-        return;
-      }
-      if (!company && !complainantName.trim()) {
-        setError("Şikayet eden kişiyi yazın ya da en altta distribütör seçin.");
-        return;
-      }
-    }
-    const input = {
-      id: editId,
-      clientId: editId ? null : clientId,
-      companyId: company?.id ?? null,
-      complainantName: complainantName || null,
-      complainantPhone: complainantPhone || null,
-      visitId,
-      type,
-      productCategoryId: productCategoryId || null,
-      description,
-      priority,
-      dueDate: dueDate || null,
-      isDraft,
-    };
-    const queue = async () => {
-      await queueForm("sikayet", `Şikayet · ${company?.name ?? (complainantName || "kayıt")}`, input, {
-        refTable: "complaint",
-        refId: editId ?? clientId,
-        list: photos,
-      });
-      toast(OFFLINE_SAVED_MSG, "info");
-      router.push(returnTo || "/sikayetler");
-    };
-    if (!isOnline()) {
-      startTransition(queue);
-      return;
-    }
-    startTransition(async () => {
-      try {
-        const res = await saveComplaint({
-          id: editId,
-          clientId: editId ? null : clientId,
-          companyId: company?.id ?? null,
-          complainantName: complainantName || null,
-          complainantPhone: complainantPhone || null,
-          visitId,
-          type,
-          productCategoryId: productCategoryId || null,
-          description,
-          priority,
-          dueDate: dueDate || null,
-          isDraft,
-        });
-        if (res.error || !res.id) {
-          setError(res.error ?? "Şikayet kaydedilemedi.");
-          return;
-        }
-        const uploaded = photos.filter((p) => p.status === "uploaded");
-        if (uploaded.length > 0) {
-          const att = await attachPhotos({
-            refTable: "complaint",
-            refId: res.id,
-            photos: uploaded.map(({ documentId, path, mime, sizeBytes }) => ({
-              documentId,
-              path,
-              mime,
-              sizeBytes,
-            })),
-          });
-          if (att.error) toast(`Fotoğraflar eklenemedi: ${att.error}`, "warn");
-        }
-        if (!isDraft) toast(`Kayıt açıldı · ${complaintCode(res.id)}`, "ok");
-        router.push(
-          isDraft ? returnTo || "/sikayetler" : `/sikayet/${res.id}${
-            returnTo ? `?return=${encodeURIComponent(returnTo)}` : ""
-          }`
-        );
-      } catch (e) {
-        if (isNetworkError(e)) {
-          await queue();
-          return;
-        }
-        setError(
-          "Kaydedilemedi — internet bağlantınızı kontrol edip tekrar deneyin."
-        );
-      }
-    });
+  const ex = existingRes.data;
+  let initial: ComplaintFormInitial | null = null;
+  let blocked: string | null = null;
+  if (editId) {
+    if (!ex) blocked = "Şikayet bulunamadı.";
+    else if (ex.reported_by !== profile.id) blocked = "Yalnızca kendi şikayetinizi düzenleyebilirsiniz.";
+    else
+      initial = {
+        id: ex.id as string,
+        isDraft: Boolean(ex.is_draft),
+        company:
+          ex.company_id && one(ex.companies as { name: string } | { name: string }[] | null)
+            ? { id: ex.company_id as string, name: one(ex.companies as { name: string } | { name: string }[] | null)!.name }
+            : null,
+        complainantName: (ex.complainant_name as string | null) ?? "",
+        complainantPhone: (ex.complainant_phone as string | null) ?? "",
+        productCategoryId: (ex.product_category_id as string | null) ?? "",
+        description: (ex.description as string | null) ?? "",
+        detectedAt: (ex.detected_at as string | null) ?? "",
+        extras: (ex.extras as Extras | null) ?? {},
+      };
   }
+  const visitId = searchParams.visit ?? (ex?.visit_id as string | null | undefined) ?? null;
+  const back = searchParams.return || (initial && !initial.isDraft ? `/sikayet/${initial.id}` : "/sikayetler");
 
   return (
     <div className="mx-auto max-w-md space-y-4">
+      <Link href={back} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Geri
+      </Link>
       <h1 className="text-lg font-semibold">
-        {editId ? "Şikayet Taslağı" : "Yeni Şikayet"}
+        {initial ? (initial.isDraft ? "Şikayet Taslağı" : "Şikayeti Düzenle") : "Yeni Şikayet"}
       </h1>
-
-      <Card>
-        <CardContent className="space-y-4 pt-4">
-          <div className="space-y-1.5">
-            <Label>Şikayet eden kişi (sistemde olmak zorunda değil)</Label>
-            <Input
-              placeholder="Ad Soyad / firma"
-              value={complainantName}
-              onChange={(e) => setComplainantName(e.target.value)}
-            />
-            <Input
-              placeholder="Telefon (opsiyonel)"
-              value={complainantPhone}
-              onChange={(e) => setComplainantPhone(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="type">Şikayet tipi *</Label>
-            <Select
-              id="type"
-              value={type}
-              onChange={(e) => setType(e.target.value as ComplaintType)}
-            >
-              {COMPLAINT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {COMPLAINT_TYPE_LABELS[t]}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="product">Hangi ürün (opsiyonel)</Label>
-            <Select
-              id="product"
-              value={productCategoryId}
-              onChange={(e) => setProductCategoryId(e.target.value)}
-            >
-              <option value="">— Seçiniz —</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label_tr}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="desc">Açıklama *</Label>
-            <Textarea
-              id="desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="prio">Öncelik</Label>
-              <Select
-                id="prio"
-                value={String(priority)}
-                onChange={(e) => setPriority(Number(e.target.value))}
-              >
-                {COMPLAINT_PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    {COMPLAINT_PRIORITY_LABELS[p]}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="due">Termin</Label>
-              <Input
-                id="due"
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Bağlı distribütör (opsiyonel)</Label>
-            <CompanyPicker
-              value={company}
-              onChange={setCompany}
-              minChars={3}
-              allowCreate
-            />
-            <p className="text-xs text-muted-foreground">
-              Bağlıysa ilk 3 harfi yazıp distribütörü seçin; distribütör dışı yeni
-              firmayı ekleyebilirsiniz.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Fotoğraf</Label>
-            <PhotoUploader
-              refTable="complaint"
-              refId={editId ?? clientId}
-              value={photos}
-              onChange={setPhotos}
-              onOffline={(p) =>
-                queuePhotoBlob({ ...p, refTable: "complaint", refId: editId ?? clientId })
-              }
-            />
-          </div>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              disabled={pending}
-              onClick={() => submit(true)}
-            >
-              Taslak kaydet
-            </Button>
-            <Button
-              className="flex-1"
-              disabled={pending}
-              onClick={() => submit(false)}
-            >
-              {editId ? "Şikayeti Tamamla" : "Şikayet Oluştur"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {blocked ? (
+        <p className="rounded-md border bg-muted/30 p-3 text-sm">{blocked}</p>
+      ) : (
+        <ComplaintForm
+          key={editId ?? "new"}
+          fields={fields}
+          categories={(cats as { id: string; label_tr: string }[] | null) ?? []}
+          initial={initial}
+          presetCompany={presetRes.data ? { id: presetRes.data.id as string, name: presetRes.data.name as string } : null}
+          visitId={visitId}
+          visitDate={(visitRes.data?.visit_date as string | null) ?? null}
+          returnTo={searchParams.return ?? null}
+        />
+      )}
     </div>
   );
 }

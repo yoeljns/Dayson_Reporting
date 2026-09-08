@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { deleteDocumentsFor } from "@/lib/documents/server";
 import { todayIso } from "@/lib/week";
+import { cleanExtras, loadFormFields, missingRequiredField, type Extras } from "@/lib/form-fields";
 
 /** Find an existing competitor by name (case-insensitive) or create it. */
 export async function createCompetitor(
@@ -98,8 +100,11 @@ export async function saveObservation(input: {
   visitId?: string | null;
   productName: string;
   observedPrice?: number | null;
+  /** true = KDV dahil, false = hariç, null = bilinmiyor */
+  priceIncludesVat?: boolean | null;
   city?: string | null;
   note?: string | null;
+  extras?: Extras | null;
   /** YYYY-MM-DD; defaults to today in Istanbul. */
   observedAt?: string | null;
   isDraft: boolean;
@@ -110,7 +115,9 @@ export async function saveObservation(input: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Oturum bulunamadı." };
 
+  const fields = await loadFormFields(supabase, "rakip");
   const productName = input.productName.trim();
+  const extras = cleanExtras(fields, input.extras);
 
   if (input.isDraft) {
     // The competitor is the subject of the record, so a draft needs at least it.
@@ -118,6 +125,20 @@ export async function saveObservation(input: {
   } else {
     if (!input.competitorId) return { error: "Rakip seçiniz." };
     if (!productName) return { error: "Ürün adı zorunludur." };
+    const missing = missingRequiredField(
+      fields,
+      {
+        competitor: input.competitorId,
+        product: productName,
+        observed_price: input.observedPrice ?? null,
+        price_includes_vat: input.priceIncludesVat == null ? null : String(input.priceIncludesVat),
+        city: input.city?.trim() || null,
+        company: input.companyId || null,
+        note: input.note?.trim() || null,
+      },
+      extras
+    );
+    if (missing) return { error: `"${missing.label_tr}" alanı zorunludur.` };
   }
 
   const observedAt =
@@ -131,14 +152,24 @@ export async function saveObservation(input: {
     visit_id: input.visitId || null,
     product_name: productName,
     observed_price: input.observedPrice ?? null,
+    price_includes_vat: input.priceIncludesVat ?? null,
     city: input.city?.trim() || null,
     note: input.note?.trim() || null,
+    extras,
     observed_at: observedAt,
     is_draft: input.isDraft,
   };
 
   let id = input.id || null;
   if (id) {
+    const { data: ex } = await supabase
+      .from("competitor_observations")
+      .select("salesperson_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (!ex) return { error: "Kayıt bulunamadı." };
+    if (ex.salesperson_id !== user.id)
+      return { error: "Yalnızca kendi kaydınızı düzenleyebilirsiniz." };
     const { error } = await supabase
       .from("competitor_observations")
       .update(row)
@@ -167,5 +198,39 @@ export async function saveObservation(input: {
   }
 
   revalidatePath("/rakip");
+  if (id) revalidatePath(`/rakip/${id}`);
+  if (input.visitId) revalidatePath(`/ziyaret/${input.visitId}`);
   return { id: id ?? undefined };
+}
+
+/** Delete an observation (owner or manager) with its attachments. */
+export async function deleteObservation(input: {
+  observationId: string;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+  const { data: o } = await supabase
+    .from("competitor_observations")
+    .select("id, salesperson_id, company_id, visit_id")
+    .eq("id", input.observationId)
+    .maybeSingle();
+  if (!o) return { error: "Kayıt bulunamadı." };
+  const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const isManager = me?.role === "manager" || me?.role === "admin";
+  if (o.salesperson_id !== user.id && !isManager)
+    return { error: "Yalnızca kendi kaydınızı silebilirsiniz." };
+  await deleteDocumentsFor("competitor_observation", o.id);
+  const { error } = await supabase.from("competitor_observations").delete().eq("id", o.id);
+  if (error) return { error: error.message };
+  revalidatePath("/rakip");
+  revalidatePath("/admin/rakip-haritasi");
+  if (o.visit_id) revalidatePath(`/ziyaret/${o.visit_id}`);
+  if (o.company_id) {
+    revalidatePath(`/firma/${o.company_id}`);
+    revalidatePath(`/admin/bayi/${o.company_id}`);
+  }
+  return { ok: true };
 }

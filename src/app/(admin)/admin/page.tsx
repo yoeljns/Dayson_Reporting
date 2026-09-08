@@ -32,10 +32,11 @@ import {
 // so the coverage tallies below are effectively exact (not silently truncated).
 const DEALER_CAP = 20000;
 
-type OverdueRow = {
+type RecentComplaintRow = {
   id: string;
   title: string;
-  due_date: string;
+  status: string;
+  created_at: string;
   complainant_name: string | null;
   companies: { name: string } | { name: string }[] | null;
 };
@@ -65,12 +66,12 @@ export default async function ManagerDashboardPage() {
     { data: lastVisits },
     { data: salespeople },
     { count: pendingPlans },
-    { count: overdueComplaints },
+    { count: weekComplaints },
     { count: openComplaints },
     { count: todayVisits },
     { data: weekVisits },
     { data: weekPlans },
-    { data: overdueList },
+    { data: recentComplaintList },
     { data: pendingPlanList },
     { data: allProfiles },
     { data: fieldCompanies },
@@ -110,8 +111,7 @@ export default async function ManagerDashboardPage() {
       .from("complaints")
       .select("id", { count: "exact", head: true })
       .eq("is_draft", false)
-      .in("status", ["acik", "islemde"])
-      .lt("due_date", today),
+      .gte("created_at", `${weekStart}T00:00:00`),
     supabase
       .from("complaints")
       .select("id", { count: "exact", head: true })
@@ -138,11 +138,10 @@ export default async function ManagerDashboardPage() {
     // Follow-up lists: the first records behind the counts.
     supabase
       .from("complaints")
-      .select("id, title, due_date, complainant_name, companies(name)")
+      .select("id, title, status, created_at, complainant_name, companies(name)")
       .eq("is_draft", false)
       .in("status", ["acik", "islemde"])
-      .lt("due_date", today)
-      .order("due_date", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(5),
     supabase
       .from("visit_plans")
@@ -289,10 +288,10 @@ export default async function ManagerDashboardPage() {
       alert: false,
     },
     {
-      label: "Geciken şikayet",
-      value: overdueComplaints ?? 0,
-      href: "/admin/sikayetler?overdue=1",
-      alert: (overdueComplaints ?? 0) > 0,
+      label: "Bu hafta açılan şikayet",
+      value: weekComplaints ?? 0,
+      href: "/admin/sikayetler",
+      alert: false,
     },
     {
       label: "Açık şikayet",
@@ -344,7 +343,7 @@ export default async function ManagerDashboardPage() {
     { label: `Hedefler ${year}`, href: `/api/admin/raporlar?type=hedef&year=${year}` },
   ];
 
-  const overdue = (overdueList ?? []) as OverdueRow[];
+  const recentComplaints = (recentComplaintList ?? []) as RecentComplaintRow[];
   const pending = (pendingPlanList ?? []) as PendingPlanRow[];
 
   return (
@@ -390,15 +389,15 @@ export default async function ManagerDashboardPage() {
         <h2 className="text-sm font-medium text-muted-foreground">Takip</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <FollowUpCard
-            title="Geciken şikayetler"
-            emptyText="Geciken şikayet yok."
+            title="Açık şikayetler (en yeni)"
+            emptyText="Açık şikayet yok."
             allHref="/admin/sikayetler"
           >
-            {overdue.map((c) => {
+            {recentComplaints.map((c) => {
               const company = Array.isArray(c.companies)
                 ? c.companies[0]
                 : c.companies;
-              const days = daysSince(c.due_date) ?? 0;
+              const days = daysSince(c.created_at.slice(0, 10)) ?? 0;
               return (
                 <Link
                   key={c.id}
@@ -413,8 +412,8 @@ export default async function ManagerDashboardPage() {
                       {company?.name || c.complainant_name || "—"}
                     </span>
                   </span>
-                  <Badge variant="destructive" className="shrink-0">
-                    {days} gün gecikti
+                  <Badge variant={c.status === "islemde" ? "default" : "warning"} className="shrink-0">
+                    {days} gündür açık
                   </Badge>
                 </Link>
               );

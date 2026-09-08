@@ -16,8 +16,6 @@ import {
   VISIT_STATUS_LABELS,
   COMPLAINT_STATUSES,
   COMPLAINT_STATUS_LABELS,
-  COMPLAINT_OWNER_DEPTS,
-  COMPLAINT_OWNER_DEPT_LABELS,
   COMPANY_KINDS,
   COMPANY_KIND_LABELS,
   SEGMENTS,
@@ -29,7 +27,6 @@ export type ReportFilterValues = {
   end: string;
   sp: string;
   status: string;
-  dept: string;
   competitor: string;
   segment: string;
   kind: string;
@@ -43,7 +40,6 @@ const EMPTY: ReportFilterValues = {
   end: "",
   sp: "",
   status: "",
-  dept: "",
   competitor: "",
   segment: "",
   kind: "",
@@ -106,7 +102,6 @@ export function ReportsControls({
     }
     if (has("sp") && vals.sp) p.sp = vals.sp;
     if ((has("vstatus") || has("cstatus")) && vals.status) p.status = vals.status;
-    if (has("dept") && vals.dept) p.dept = vals.dept;
     if (has("competitor") && vals.competitor) p.competitor = vals.competitor;
     if (has("segment") && vals.segment) p.segment = vals.segment;
     if (has("kind") && vals.kind) p.kind = vals.kind;
@@ -137,7 +132,6 @@ export function ReportsControls({
         ? VISIT_STATUS_LABELS[applied.status as keyof typeof VISIT_STATUS_LABELS] ?? applied.status
         : COMPLAINT_STATUS_LABELS[applied.status as keyof typeof COMPLAINT_STATUS_LABELS] ?? applied.status
     );
-  if (applied.dept) activeBadges.push(COMPLAINT_OWNER_DEPT_LABELS[applied.dept as keyof typeof COMPLAINT_OWNER_DEPT_LABELS] ?? applied.dept);
   if (applied.competitor) activeBadges.push(nameOf(competitors, applied.competitor));
   if (applied.segment) activeBadges.push(`Segment ${applied.segment}`);
   if (applied.kind) activeBadges.push(COMPANY_KIND_LABELS[applied.kind as keyof typeof COMPANY_KIND_LABELS] ?? applied.kind);
@@ -249,18 +243,6 @@ export function ReportsControls({
                       {COMPLAINT_STATUS_LABELS[s]}
                     </option>
                   ))}
-            </Select>
-          </Field>
-        )}
-        {has("dept") && (
-          <Field label="Departman" id="dept">
-            <Select id="dept" value={v.dept} onChange={(e) => set("dept", e.target.value)} className="w-48">
-              <option value="">Tümü</option>
-              {COMPLAINT_OWNER_DEPTS.map((d) => (
-                <option key={d} value={d}>
-                  {COMPLAINT_OWNER_DEPT_LABELS[d]}
-                </option>
-              ))}
             </Select>
           </Field>
         )}

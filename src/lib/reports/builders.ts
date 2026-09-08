@@ -4,21 +4,15 @@ import {
   VISIT_TYPE_LABELS,
   VISIT_STATUS_LABELS,
   VISIT_STATUSES,
-  COMPLAINT_TYPE_LABELS,
   COMPLAINT_STATUS_LABELS,
   COMPLAINT_STATUSES,
-  COMPLAINT_OWNER_DEPT_LABELS,
-  COMPLAINT_OWNER_DEPTS,
-  COMPLAINT_PRIORITY_LABELS,
   DEBT_STATUS_LABELS,
   SUPPLY_KIND_LABELS,
   SEGMENTS,
   COMPANY_KINDS,
   type VisitType,
   type VisitStatus,
-  type ComplaintType,
   type ComplaintStatus,
-  type ComplaintOwnerDept,
   type DebtStatus,
 } from "@/lib/enums";
 import {
@@ -38,6 +32,7 @@ import {
 } from "@/lib/reports/filters";
 import type { Cell, SheetRow } from "@/lib/reports/sheet";
 import { analyzeBrandSwitch } from "@/lib/analytics/brand-switch";
+import { formatExtra, normalizeOptions, type FormField } from "@/lib/form-fields";
 
 export type BuildResult = {
   sheetName: string;
@@ -457,7 +452,7 @@ export const buildSikayet: ReportBuilder = async (supabase, f, opts) => {
   let q = supabase
     .from("complaints")
     .select(
-      "id, title, type, status, owner_dept, priority, created_at, due_date, resolved_at, complainant_name, companies(name), reporter:reported_by(full_name), assignee:assignee_id(full_name)"
+      "id, title, description, status, created_at, detected_at, extras, resolved_at, complainant_name, companies(name), reporter:reported_by(full_name), assignee:assignee_id(full_name), product_categories(label_tr)"
     )
     .eq("is_draft", false)
     .gte("created_at", start)
@@ -466,28 +461,34 @@ export const buildSikayet: ReportBuilder = async (supabase, f, opts) => {
     .limit(max + 1);
   if (f.status && (COMPLAINT_STATUSES as readonly string[]).includes(f.status))
     q = q.eq("status", f.status);
-  if (f.dept && (COMPLAINT_OWNER_DEPTS as readonly string[]).includes(f.dept))
-    q = q.eq("owner_dept", f.dept);
 
   const { data } = await q;
+  const { data: fieldRows } = await supabase
+    .from("form_fields")
+    .select("*")
+    .eq("form", "sikayet")
+    .eq("is_builtin", false)
+    .eq("is_active", true)
+    .order("sort_order");
+  const extraFields = ((fieldRows ?? []) as FormField[]).map((x) => ({ ...x, options: normalizeOptions(x.options) }));
   const all = (data ?? []) as Record<string, unknown>[];
   const capped = all.length > max;
   const list = capped ? all.slice(0, max) : all;
 
   const headers = [
     "Oluşturma",
+    "Tespit Tarihi",
     "Başlık",
-    "Tür",
-    "Departman",
-    "Öncelik",
+    "Açıklama",
+    "Ürün",
     "Durum",
     "Firma/Şikayetçi",
     "Bildiren",
     "Atanan",
-    "Son Tarih",
     "Çözüm Tarihi",
     "Açık Gün",
     "Çözüm Süresi (gün)",
+    ...extraFields.map((x) => x.label_tr),
   ];
   const rows: SheetRow[] = list.map((c) => {
     const company = one(c.companies as { name?: string } | null);
@@ -497,21 +498,19 @@ export const buildSikayet: ReportBuilder = async (supabase, f, opts) => {
     const resolvedIso = (c.resolved_at as string | null)?.slice(0, 10) ?? null;
     const status = c.status as ComplaintStatus;
     const closed = status === "cozuldu" || status === "iptal";
-    return {
+    const cat = one(c.product_categories as { label_tr?: string } | null);
+    const extras = (c.extras ?? {}) as Record<string, unknown>;
+    const row: SheetRow = {
       Oluşturma: createdIso ? formatTRDate(createdIso) : null,
+      "Tespit Tarihi": c.detected_at ? formatTRDate(c.detected_at as string) : null,
       Başlık: c.title as string,
-      Tür: COMPLAINT_TYPE_LABELS[c.type as ComplaintType] ?? (c.type as string),
-      Departman:
-        COMPLAINT_OWNER_DEPT_LABELS[c.owner_dept as ComplaintOwnerDept] ??
-        (c.owner_dept as string),
-      Öncelik:
-        COMPLAINT_PRIORITY_LABELS[c.priority as number] ?? String(c.priority),
+      Açıklama: (c.description as string | null) ?? "",
+      Ürün: cat?.label_tr ?? "",
       Durum: COMPLAINT_STATUS_LABELS[status] ?? (status as string),
       "Firma/Şikayetçi":
         company?.name ?? (c.complainant_name as string | null) ?? "",
       Bildiren: rep?.full_name ?? "",
       Atanan: asg?.full_name ?? "",
-      "Son Tarih": c.due_date ? formatTRDate(c.due_date as string) : null,
       "Çözüm Tarihi": resolvedIso ? formatTRDate(resolvedIso) : null,
       "Açık Gün": closed ? null : daysSince(createdIso),
       "Çözüm Süresi (gün)":
@@ -519,6 +518,11 @@ export const buildSikayet: ReportBuilder = async (supabase, f, opts) => {
           ? differenceInCalendarDays(parseISO(resolvedIso), parseISO(createdIso))
           : null,
     };
+    for (const x of extraFields) {
+      const v = formatExtra(x, extras[x.key]);
+      row[x.label_tr] = v === "—" ? "" : v;
+    }
+    return row;
   });
 
   return { sheetName: "Şikayetler", headers, rows, capped };
@@ -534,7 +538,7 @@ export const buildRakip: ReportBuilder = async (supabase, f, opts) => {
   let q = supabase
     .from("competitor_observations")
     .select(
-      "observed_at, product_name, observed_price, currency, city, note, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
+      "observed_at, product_name, observed_price, price_includes_vat, currency, city, note, extras, competitors(name), companies(name), salesperson:salesperson_id(full_name)"
     )
     .eq("is_draft", false)
     .gte("observed_at", start)
@@ -548,32 +552,50 @@ export const buildRakip: ReportBuilder = async (supabase, f, opts) => {
   const capped = all.length > max;
   const list = capped ? all.slice(0, max) : all;
 
+  const { data: fieldRows } = await supabase
+    .from("form_fields")
+    .select("*")
+    .eq("form", "rakip")
+    .eq("is_builtin", false)
+    .eq("is_active", true)
+    .order("sort_order");
+  const extraFields = ((fieldRows ?? []) as FormField[]).map((x) => ({ ...x, options: normalizeOptions(x.options) }));
   const headers = [
     "Tarih",
     "Rakip",
     "Ürün",
     "Fiyat",
+    "KDV",
     "Para Birimi",
     "Şehir",
     "Firma",
     "Pazarlamacı",
     "Not",
+    ...extraFields.map((x) => x.label_tr),
   ];
   const rows: SheetRow[] = list.map((o) => {
     const comp = one(o.competitors as { name?: string } | null);
     const company = one(o.companies as { name?: string } | null);
     const sp = one(o.salesperson as { full_name?: string } | null);
-    return {
+    const vat = o.price_includes_vat as boolean | null;
+    const extras = (o.extras ?? {}) as Record<string, unknown>;
+    const row: SheetRow = {
       Tarih: o.observed_at ? formatTRDate(o.observed_at as string) : null,
       Rakip: comp?.name ?? "",
       Ürün: o.product_name as string,
       Fiyat: (o.observed_price as number | null) ?? null,
+      KDV: vat === true ? "Dahil" : vat === false ? "Hariç" : "",
       "Para Birimi": (o.currency as string) ?? "",
       Şehir: (o.city as string | null) ?? "",
       Firma: company?.name ?? "",
       Pazarlamacı: sp?.full_name ?? "",
       Not: (o.note as string | null) ?? "",
     };
+    for (const x of extraFields) {
+      const v = formatExtra(x, extras[x.key]);
+      row[x.label_tr] = v === "—" ? "" : v;
+    }
+    return row;
   });
 
   return { sheetName: "Rakip Fiyat", headers, rows, capped };

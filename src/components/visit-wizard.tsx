@@ -23,6 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { queueVisit, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
 import { cn } from "@/lib/utils";
+import { formatTRDate } from "@/lib/week";
 import { visitCode } from "@/lib/codes";
 import {
   answerIsComplete,
@@ -78,6 +79,7 @@ export function VisitWizard({
   existingAnswers,
   categories,
   existingProducts,
+  previousProducts = {},
   contacts,
   currentContactId,
   initialCompleted,
@@ -101,6 +103,9 @@ export function VisitWizard({
     brand_id: string | null;
     supply_kind: string;
   }[];
+  /** What the company's previous completed visit recorded per category
+   *  (category id → labels + visit date) — shown as a hint only. */
+  previousProducts?: Record<string, { date: string; labels: string[] }>;
   contacts: CompanyContact[];
   currentContactId: string | null;
   initialCompleted: boolean;
@@ -657,12 +662,18 @@ export function VisitWizard({
 
           {current?.kind === "products" && (
             <div className="space-y-4">
-              <Label>Bu ürünleri kimden alıyor?</Label>
+              <Label>Raf Bilgisi</Label>
               {catOptions.map((c) => {
                 const s = productSel[c.id] ?? { brands: [], supply: "" };
+                const prev = previousProducts[c.id];
                 return (
                   <div key={c.id} className="rounded-md border p-3">
-                    <div className="mb-2 font-medium">{c.label_tr}</div>
+                    <div className={prev ? "font-medium" : "mb-2 font-medium"}>{c.label_tr}</div>
+                    {prev && (
+                      <p className="mb-2 text-xs text-muted-foreground">
+                        Önceki ziyaret ({formatTRDate(prev.date)}): {prev.labels.join(", ")}
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       {c.brands.map((b) => {
                         const on = s.brands.includes(b.brandId);
