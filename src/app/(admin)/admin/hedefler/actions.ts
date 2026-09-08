@@ -50,31 +50,22 @@ export async function ensureTarget(input: {
 }
 
 type Snapshot = Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+type LineInput = { salesCategoryId: string; targetQty: number; monthly?: number[] | null };
 
 const sameMonthly = (a: number[] | null, b: number[] | null) =>
   (a == null && b == null) || (a != null && b != null && a.every((v, i) => v === b[i]));
 
 /**
- * Replace the quantity targets per sales category. Actuals come from
- * shipments, so only targets are written. When anything changed a revision
- * (before/after + reason) is recorded so the change stays visible.
+ * Upsert quantity lines of a target and record a revision when anything
+ * changed. Shared by the manager editor and proposal approval.
  */
-export async function saveTargetLines(input: {
-  targetId: string | null;
-  companyId: string;
-  year: number;
-  note?: string | null;
-  reason?: string | null;
-  lines: { salesCategoryId: string; targetQty: number; monthly?: number[] | null }[];
-}): Promise<{ ok?: boolean; changed?: boolean; error?: string }> {
-  const profile = await requireManager();
-  const supabase = createClient();
-  const ensured = input.targetId
-    ? { id: input.targetId }
-    : await ensureTarget({ companyId: input.companyId, year: input.year });
-  if (ensured.error || !ensured.id) return { error: ensured.error ?? "Hedef açılamadı." };
-  const targetId = ensured.id;
-
+async function applyLines(
+  supabase: ReturnType<typeof createClient>,
+  targetId: string,
+  lines: LineInput[],
+  changedBy: string,
+  reason: string | null
+): Promise<{ changed: boolean; error?: string }> {
   const { data: cats } = await supabase.from("sales_categories").select("id, code, monthly");
   const catById = new Map(
     ((cats as { id: string; code: string; monthly: boolean }[] | null) ?? []).map((c) => [c.id, c])
@@ -101,13 +92,17 @@ export async function saveTargetLines(input: {
   };
   const after: Snapshot = { ...before };
   let changed = false;
-  for (const l of input.lines) {
+  for (const l of lines) {
     const c = catById.get(l.salesCategoryId);
-    if (!c) return { error: "Geçersiz kategori." };
+    if (!c) return { changed: false, error: "Geçersiz kategori." };
     const monthly = c.monthly ? normalizeMonthly(l.monthly).map(clean) : null;
     const targetQty = monthly ? monthly.reduce((a, b) => a + b, 0) : clean(l.targetQty);
     const prev = before[c.code];
-    if (!prev ? targetQty > 0 || (monthly?.some((v) => v > 0) ?? false) : prev.target_qty !== targetQty || !sameMonthly(prev.monthly_qty, monthly))
+    if (
+      !prev
+        ? targetQty > 0 || (monthly?.some((v) => v > 0) ?? false)
+        : prev.target_qty !== targetQty || !sameMonthly(prev.monthly_qty, monthly)
+    )
       changed = true;
     after[c.code] = { target_qty: targetQty, monthly_qty: monthly };
     const { error } = await supabase.from("dealer_target_lines").upsert(
@@ -120,25 +115,109 @@ export async function saveTargetLines(input: {
       },
       { onConflict: "target_id,sales_category_id" }
     );
-    if (error) return { error: error.message };
+    if (error) return { changed: false, error: error.message };
   }
+  if (changed) {
+    await supabase.from("dealer_target_revisions").insert({
+      target_id: targetId,
+      changed_by: changedBy,
+      reason: reason?.trim() || null,
+      before,
+      after,
+    });
+  }
+  return { changed };
+}
+
+/**
+ * Replace the quantity targets per sales category. Actuals come from
+ * shipments, so only targets are written. When anything changed a revision
+ * (before/after + reason) is recorded so the change stays visible.
+ */
+export async function saveTargetLines(input: {
+  targetId: string | null;
+  companyId: string;
+  year: number;
+  note?: string | null;
+  reason?: string | null;
+  lines: LineInput[];
+}): Promise<{ ok?: boolean; changed?: boolean; error?: string }> {
+  const profile = await requireManager();
+  const supabase = createClient();
+  const ensured = input.targetId
+    ? { id: input.targetId }
+    : await ensureTarget({ companyId: input.companyId, year: input.year });
+  if (ensured.error || !ensured.id) return { error: ensured.error ?? "Hedef açılamadı." };
+  const targetId = ensured.id;
+
+  const applied = await applyLines(supabase, targetId, input.lines, profile.id, input.reason ?? null);
+  if (applied.error) return { error: applied.error };
   const { error } = await supabase
     .from("dealer_targets")
     .update({ note: input.note?.trim() || null, updated_at: new Date().toISOString() })
     .eq("id", targetId);
   if (error) return { error: error.message };
-
-  if (changed) {
-    await supabase.from("dealer_target_revisions").insert({
-      target_id: targetId,
-      changed_by: profile.id,
-      reason: input.reason?.trim() || null,
-      before,
-      after,
-    });
-  }
   revalidate(input.companyId, input.year);
-  return { ok: true, changed };
+  return { ok: true, changed: applied.changed };
+}
+
+/**
+ * Manager decision on a salesperson's proposal. Approval writes the proposed
+ * lines into the target (with a revision) — nothing changes before that.
+ */
+export async function reviewTargetProposal(input: {
+  proposalId: string;
+  decision: "onaylandi" | "reddedildi";
+  note?: string | null;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const profile = await requireManager();
+  const supabase = createClient();
+  const { data: p } = await supabase
+    .from("dealer_target_proposals")
+    .select("id, company_id, year, proposed_by, lines, status, profiles:proposed_by(full_name)")
+    .eq("id", input.proposalId)
+    .maybeSingle();
+  if (!p || p.status !== "bekliyor") return { error: "Öneri bulunamadı ya da zaten değerlendirildi." };
+  const companyId = p.company_id as string;
+  const year = p.year as number;
+  const note = input.note?.trim() || null;
+
+  if (input.decision === "onaylandi") {
+    const ensured = await ensureTarget({ companyId, year });
+    if (ensured.error || !ensured.id) return { error: ensured.error ?? "Hedef açılamadı." };
+    const { data: cats } = await supabase.from("sales_categories").select("id, code");
+    const proposed = (p.lines ?? {}) as Record<string, { target_qty?: number; monthly_qty?: number[] | null }>;
+    const lines: LineInput[] = [];
+    for (const c of (cats as { id: string; code: string }[] | null) ?? []) {
+      const v = proposed[c.code];
+      if (!v) continue;
+      lines.push({ salesCategoryId: c.id, targetQty: Number(v.target_qty ?? 0), monthly: v.monthly_qty ?? null });
+    }
+    const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
+    const who = (prof as { full_name: string } | null)?.full_name;
+    const applied = await applyLines(
+      supabase,
+      ensured.id,
+      lines,
+      profile.id,
+      `Pazarlamacı önerisi onaylandı${who ? ` (${who})` : ""}${note ? `: ${note}` : ""}`
+    );
+    if (applied.error) return { error: applied.error };
+  }
+
+  const { error } = await supabase
+    .from("dealer_target_proposals")
+    .update({
+      status: input.decision,
+      reviewed_by: profile.id,
+      reviewed_at: new Date().toISOString(),
+      review_note: note,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", p.id);
+  if (error) return { error: error.message };
+  revalidate(companyId, year);
+  return { ok: true };
 }
 
 /** Draft → Mutabık (with date + contact) / İptal, or back to draft. */

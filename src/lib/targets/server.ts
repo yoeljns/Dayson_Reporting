@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DealerTarget, DealerTargetLine } from "@/types/db";
+import type { DealerTarget, DealerTargetLine, DealerTargetProposal } from "@/types/db";
 
 export type TargetWithLines = DealerTarget & { lines: DealerTargetLine[] };
 
@@ -87,4 +87,68 @@ export async function getTargetRevisions(
       after: r.after ?? {},
     };
   });
+}
+
+export type TargetProposalView = DealerTargetProposal & { proposed_by_name: string | null };
+
+type ProposalRow = DealerTargetProposal & {
+  profiles: { full_name: string } | { full_name: string }[] | null;
+};
+const toView = (r: ProposalRow): TargetProposalView => {
+  const { profiles, ...rest } = r;
+  const p = Array.isArray(profiles) ? profiles[0] : profiles;
+  return { ...rest, lines: rest.lines ?? {}, proposed_by_name: p?.full_name ?? null };
+};
+const PROPOSAL_SELECT = "*, profiles:proposed_by(full_name)";
+
+/** Newest proposal for a dealer-year (optionally only one rep's). */
+export async function latestProposalFor(
+  supabase: SupabaseClient,
+  companyId: string,
+  year: number,
+  proposedBy?: string
+): Promise<TargetProposalView | null> {
+  let q = supabase
+    .from("dealer_target_proposals")
+    .select(PROPOSAL_SELECT)
+    .eq("company_id", companyId)
+    .eq("year", year)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (proposedBy) q = q.eq("proposed_by", proposedBy);
+  const { data } = await q.maybeSingle();
+  return data ? toView(data as unknown as ProposalRow) : null;
+}
+
+/** The proposal awaiting a manager's decision for a dealer-year, if any. */
+export async function pendingProposalFor(
+  supabase: SupabaseClient,
+  companyId: string,
+  year: number
+): Promise<TargetProposalView | null> {
+  const { data } = await supabase
+    .from("dealer_target_proposals")
+    .select(PROPOSAL_SELECT)
+    .eq("company_id", companyId)
+    .eq("year", year)
+    .eq("status", "bekliyor")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? toView(data as unknown as ProposalRow) : null;
+}
+
+/** All pending proposals of a year (list page, dashboard). */
+export async function pendingProposalsForYear(
+  supabase: SupabaseClient,
+  year: number
+): Promise<TargetProposalView[]> {
+  const { data } = await supabase
+    .from("dealer_target_proposals")
+    .select(PROPOSAL_SELECT)
+    .eq("year", year)
+    .eq("status", "bekliyor")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  return ((data as unknown as ProposalRow[] | null) ?? []).map(toView);
 }

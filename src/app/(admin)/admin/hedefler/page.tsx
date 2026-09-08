@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PaceBadge } from "@/components/target-view";
-import { targetsForYear } from "@/lib/targets/server";
+import { pendingProposalsForYear, targetsForYear } from "@/lib/targets/server";
 import { loadSalesCategories, shipmentTotalsForYear } from "@/lib/sales/server";
 import { buildTargetStatus, elapsedFractionOfYear, fmtEur, fmtQtyUnit, fmtUnit } from "@/lib/rules/target";
 import { getPaceThresholds } from "@/lib/settings";
@@ -26,7 +26,7 @@ export default async function TargetsPage({
   const year = Number(searchParams.year) || thisYear;
   const q = (searchParams.q ?? "").trim().toLocaleLowerCase("tr");
 
-  const [{ data: dealers }, targets, shipments, categories, thresholds] = await Promise.all([
+  const [{ data: dealers }, targets, shipments, categories, thresholds, proposals] = await Promise.all([
     supabase
       .from("companies")
       .select("id, name, city, logo_code")
@@ -38,8 +38,10 @@ export default async function TargetsPage({
     shipmentTotalsForYear(supabase, year),
     loadSalesCategories(supabase),
     getPaceThresholds(),
+    pendingProposalsForYear(supabase, year),
   ]);
   const elapsed = elapsedFractionOfYear(year, today);
+  const pendingByCompany = new Map(proposals.map((p) => [p.company_id, p]));
   const mastik = categories.find((c) => c.code === "mastik") ?? null;
 
   const rows = ((dealers as { id: string; name: string; city: string | null; logo_code: string | null }[] | null) ?? [])
@@ -48,12 +50,12 @@ export default async function TargetsPage({
       const t = targets.get(d.id) ?? null;
       const st = buildTargetStatus(t?.lines ?? [], categories, shipments.get(d.id) ?? null, year, today, thresholds);
       const m = mastik ? st.lines.find((l) => l.category.id === mastik.id) ?? null : null;
-      return { ...d, t, st, m };
+      return { ...d, t, st, m, proposal: pendingByCompany.get(d.id) ?? null };
     })
-    // Behind first (most categories behind on top), then on-track, ahead, no target.
+    // Pending proposals first, then behind, on-track, ahead, no target.
     .sort((a, b) => {
       const order = (p: typeof a) =>
-        !p.st.withTarget ? 3 : p.st.pace === "geride" ? 0 : p.st.pace === "yolunda" ? 1 : 2;
+        p.proposal ? -1 : !p.st.withTarget ? 3 : p.st.pace === "geride" ? 0 : p.st.pace === "yolunda" ? 1 : 2;
       return order(a) - order(b) || b.st.behind - a.st.behind || a.name.localeCompare(b.name, "tr");
     });
   const withTarget = rows.filter((r) => r.st.withTarget > 0).length;
@@ -68,6 +70,7 @@ export default async function TargetsPage({
           <p className="text-sm text-muted-foreground">
             {year} yılı bayi hedefleri: {withTarget} bayide hedef var, {behind} bayi geride. Yılın %
             {Math.round(elapsed * 100)}&apos;i geçti. Sevk edilen miktarlar haftalık sevkiyat dosyasından gelir.
+            {proposals.length > 0 ? ` ${proposals.length} pazarlamacı önerisi onay bekliyor.` : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -136,6 +139,11 @@ export default async function TargetsPage({
                     </span>
                   </td>
                   <td className="px-3 py-2">
+                    {r.proposal && (
+                      <Link href={`/admin/hedefler/${r.id}/${year}`} className="mr-1 inline-block">
+                        <Badge variant="warning">Öneri bekliyor</Badge>
+                      </Link>
+                    )}
                     {r.t ? (
                       <Badge
                         variant={r.t.status === "mutabik" ? "success" : r.t.status === "iptal" ? "secondary" : "warning"}

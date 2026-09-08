@@ -16,7 +16,7 @@ import {
 } from "@/lib/week";
 import { groupAssignments, repsLabel } from "@/lib/assignments";
 import { getStaleDays, getPaceThresholds } from "@/lib/settings";
-import { targetsForYear } from "@/lib/targets/server";
+import { pendingProposalsForYear, targetsForYear } from "@/lib/targets/server";
 import { buildTargetStatus, fmtQtyUnit, fmtUnit } from "@/lib/rules/target";
 import { loadSalesCategories, shipmentTotalsForYear } from "@/lib/sales/server";
 import { PaceBadge } from "@/components/target-view";
@@ -81,6 +81,7 @@ export default async function ManagerDashboardPage() {
     targets,
     shipmentsByCompany,
     salesCats,
+    pendingProposals,
     { data: todayPlanItems },
     { data: todayVisitRows },
   ] = await Promise.all([
@@ -182,6 +183,7 @@ export default async function ManagerDashboardPage() {
     targetsForYear(supabase, year),
     shipmentTotalsForYear(supabase, year),
     loadSalesCategories(supabase),
+    pendingProposalsForYear(supabase, year),
     // Today's planned items (this week's plans) — for plan adherence per rep.
     supabase
       .from("visit_plan_items")
@@ -566,6 +568,28 @@ export default async function ManagerDashboardPage() {
                   </span>
                 </span>
                 <PaceBadge pace={st.pace} />
+              </Link>
+            ))}
+          </FollowUpCard>
+
+          <FollowUpCard
+            title="Onay bekleyen hedef önerileri"
+            emptyText="Bekleyen hedef önerisi yok."
+            allHref={`/admin/hedefler?year=${year}`}
+          >
+            {pendingProposals.slice(0, 5).map((p) => (
+              <Link
+                key={p.id}
+                href={`/admin/hedefler/${p.company_id}/${p.year}`}
+                className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{dealerName.get(p.company_id) ?? "Bayi"}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {p.proposed_by_name ?? "Pazarlamacı"} · {formatTRDate(p.updated_at.slice(0, 10))}
+                  </span>
+                </span>
+                <Badge variant="warning">Onay bekliyor</Badge>
               </Link>
             ))}
           </FollowUpCard>

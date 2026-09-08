@@ -176,6 +176,13 @@ export const TARGET_STATUS_LABELS: Record<TargetStatus, string> = {
   mutabik: "Mutabık",
   iptal: "İptal",
 };
+export const TARGET_PROPOSAL_STATUSES = ["bekliyor", "onaylandi", "reddedildi"] as const;
+export type TargetProposalStatus = (typeof TARGET_PROPOSAL_STATUSES)[number];
+export const TARGET_PROPOSAL_STATUS_LABELS: Record<TargetProposalStatus, string> = {
+  bekliyor: "Onay bekliyor",
+  onaylandi: "Onaylandı",
+  reddedildi: "Reddedildi",
+};
 export const PACE_LABELS = {
   onde: "Önde",
   yolunda: "Yolunda",

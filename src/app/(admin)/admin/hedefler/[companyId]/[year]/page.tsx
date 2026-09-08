@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TargetEditor } from "@/components/target-editor";
 import { TargetView } from "@/components/target-view";
-import { getTargetFor, getTargetRevisions } from "@/lib/targets/server";
+import { getTargetFor, getTargetRevisions, pendingProposalFor } from "@/lib/targets/server";
+import { TargetProposalReview } from "@/components/target-proposal-review";
 import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
 import { buildTargetStatus } from "@/lib/rules/target";
 import { getPaceThresholds } from "@/lib/settings";
@@ -29,7 +30,7 @@ export default async function TargetDetailPage({
     .maybeSingle();
   if (!company || company.kind !== "distributor") notFound();
 
-  const [target, categories, shipments, { data: contacts }, thresholds] = await Promise.all([
+  const [target, categories, shipments, { data: contacts }, thresholds, proposal] = await Promise.all([
     getTargetFor(supabase, company.id, year),
     loadSalesCategories(supabase),
     shipmentTotalsFor(supabase, company.id, year),
@@ -39,8 +40,14 @@ export default async function TargetDetailPage({
       .eq("company_id", company.id)
       .order("name"),
     getPaceThresholds(),
+    pendingProposalFor(supabase, company.id, year),
   ]);
   const revisions = target ? await getTargetRevisions(supabase, target.id) : [];
+  const currentByCode: Record<string, { target: number; monthly: number[] | null }> = {};
+  for (const c of categories) {
+    const l = target?.lines.find((x) => x.sales_category_id === c.id);
+    if (l) currentByCode[c.code] = { target: Number(l.target_qty) || 0, monthly: l.monthly_qty ?? null };
+  }
   const today = todayIso();
   const status = buildTargetStatus(target?.lines ?? [], categories, shipments, year, today, thresholds);
   const shipped: Record<string, number> = {};
@@ -71,6 +78,8 @@ export default async function TargetDetailPage({
           <Upload className="h-4 w-4" /> Sevkiyat yükle
         </Link>
       </div>
+
+      {proposal && <TargetProposalReview proposal={proposal} categories={categories} current={currentByCode} />}
 
       <Card>
         <CardHeader>

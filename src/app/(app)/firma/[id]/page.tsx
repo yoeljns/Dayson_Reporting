@@ -20,7 +20,8 @@ import { CompanyNav } from "@/components/company-nav";
 import { companyNeighbours, listQueryString, withQuery } from "@/lib/companies/list";
 import { TargetView } from "@/components/target-view";
 import { StockHistory } from "@/components/stock-history";
-import { getTargetFor } from "@/lib/targets/server";
+import { getTargetFor, latestProposalFor } from "@/lib/targets/server";
+import { TargetProposalForm } from "@/components/target-proposal-form";
 import { buildTargetStatus } from "@/lib/rules/target";
 import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
 import { getPaceThresholds } from "@/lib/settings";
@@ -285,7 +286,9 @@ export default async function CompanyCardPage({
         </div>
       )}
 
-      {tab === "hedef" && isDealer && <TargetTab companyId={company.id} />}
+      {tab === "hedef" && isDealer && (
+        <TargetTab companyId={company.id} profileId={profile.id} canPropose={profile.role === "salesperson"} />
+      )}
 
       {tab === "ziyaretler" && (
         <div className="space-y-2">
@@ -365,24 +368,43 @@ async function LastVisitNotes({ visitId, visit }: { visitId: string; visit: Visi
   );
 }
 
-async function TargetTab({ companyId }: { companyId: string }) {
+async function TargetTab({
+  companyId,
+  profileId,
+  canPropose,
+}: {
+  companyId: string;
+  profileId: string;
+  canPropose: boolean;
+}) {
   const supabase = createClient();
   const today = todayIso();
   const year = Number(today.slice(0, 4));
-  const [target, thresholds, categories, shipments] = await Promise.all([
+  const [target, thresholds, categories, shipments, latest] = await Promise.all([
     getTargetFor(supabase, companyId, year),
     getPaceThresholds(),
     loadSalesCategories(supabase),
     shipmentTotalsFor(supabase, companyId, year),
+    canPropose ? latestProposalFor(supabase, companyId, year, profileId) : Promise.resolve(null),
   ]);
   const status = buildTargetStatus(target?.lines ?? [], categories, shipments, year, today, thresholds);
+  const current: Record<string, { target: number; monthly: number[] | null }> = {};
+  for (const l of target?.lines ?? []) {
+    if (!l.sales_category_id) continue;
+    current[l.sales_category_id] = { target: Number(l.target_qty) || 0, monthly: l.monthly_qty ?? null };
+  }
   return (
-    <Card>
-      <CardContent className="pt-4">
-        <div className="section-label mb-2">{year} hedefi</div>
-        <TargetView status={status} target={target} compact />
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="pt-4">
+          <div className="section-label mb-2">{year} hedefi</div>
+          <TargetView status={status} target={target} compact />
+        </CardContent>
+      </Card>
+      {canPropose && (
+        <TargetProposalForm companyId={companyId} year={year} categories={categories} current={current} latest={latest} />
+      )}
+    </div>
   );
 }
 

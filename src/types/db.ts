@@ -416,6 +416,21 @@ export interface DealerTargetRevision {
   after: Record<string, { target_qty: number; monthly_qty: number[] | null }>;
 }
 
+export interface DealerTargetProposal {
+  id: string;
+  company_id: string;
+  year: number;
+  proposed_by: string;
+  lines: Record<string, { target_qty: number; monthly_qty: number[] | null }>;
+  note: string | null;
+  status: "bekliyor" | "onaylandi" | "reddedildi";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ErpCustomer {
   cari_name: string;
   company_id: string | null;
