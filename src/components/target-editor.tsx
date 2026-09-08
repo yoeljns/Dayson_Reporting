@@ -11,14 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { TARGET_STATUS_LABELS } from "@/lib/enums";
-import { MONTHS_TR_SHORT, fmtQtyUnit, normalizeMonthly } from "@/lib/rules/target";
+import { fmtQtyUnit, monthlyAllowance } from "@/lib/rules/target";
 import { todayIso } from "@/lib/week";
 import type { SalesCategory } from "@/types/db";
 import type { TargetWithLines } from "@/lib/targets/server";
 import { saveTargetLines, setTargetStatus } from "@/app/(admin)/admin/hedefler/actions";
 
 type Contact = { id: string; name: string; role: string | null };
-type Row = { qty: string; monthly: string[] };
+type Row = { qty: string };
 
 const EMPTY_TARGET = (companyId: string, year: number): TargetWithLines => ({
   id: "",
@@ -41,9 +41,9 @@ const num = (s: string) => {
 
 /**
  * Quantity targets per sales category (unit per category). Monthly
- * categories (PU Mastik) take twelve monthly figures; the yearly target is
- * their sum. Shipped quantities are read-only — they come from the weekly
- * shipment upload.
+ * categories (PU Mastik) take a monthly allowance ("her ay 15 palet"); the
+ * yearly target is twelve times that. Shipped quantities are read-only — they
+ * come from the weekly shipment upload.
  */
 export function TargetEditor({
   target: targetProp,
@@ -71,11 +71,8 @@ export function TargetEditor({
     const m: Record<string, Row> = {};
     for (const c of categories) {
       const l = target.lines.find((x) => x.sales_category_id === c.id);
-      const monthly = normalizeMonthly(l?.monthly_qty);
-      m[c.id] = {
-        qty: l && Number(l.target_qty) > 0 ? String(Number(l.target_qty)) : "",
-        monthly: monthly.map((v) => (v > 0 ? String(v) : "")),
-      };
+      const v = !l ? 0 : c.monthly ? monthlyAllowance(l) : Number(l.target_qty) || 0;
+      m[c.id] = { qty: v > 0 ? String(v) : "" };
     }
     return m;
   };
@@ -86,17 +83,13 @@ export function TargetEditor({
   const [agreedAt, setAgreedAt] = useState(target.agreed_at ?? todayIso());
   const [agreedWith, setAgreedWith] = useState(target.agreed_with ?? "");
 
-  const yearlyOf = (c: SalesCategory) =>
-    c.monthly ? rows[c.id].monthly.reduce((a, s) => a + num(s), 0) : num(rows[c.id].qty);
+  const yearlyOf = (c: SalesCategory) => (c.monthly ? num(rows[c.id].qty) * 12 : num(rows[c.id].qty));
 
   const hasExisting = target.lines.some((l) => l.sales_category_id && Number(l.target_qty) > 0);
   const changed = categories.some((c) => {
     const l = target.lines.find((x) => x.sales_category_id === c.id);
     const prevQty = Number(l?.target_qty ?? 0);
-    if (Math.abs(prevQty - yearlyOf(c)) > 0.05) return true;
-    if (!c.monthly) return false;
-    const prevM = normalizeMonthly(l?.monthly_qty);
-    return rows[c.id].monthly.some((s, i) => Math.abs(num(s) - prevM[i]) > 0.05);
+    return Math.abs(prevQty - yearlyOf(c)) > 0.05;
   });
 
   function run(fn: () => Promise<{ error?: string }>, okMsg: string) {
@@ -129,8 +122,8 @@ export function TargetEditor({
           reason: reason || null,
           lines: categories.map((c) => ({
             salesCategoryId: c.id,
-            targetQty: num(rows[c.id].qty),
-            monthly: c.monthly ? rows[c.id].monthly.map(num) : null,
+            targetQty: yearlyOf(c),
+            monthly: c.monthly ? Array(12).fill(num(rows[c.id].qty)) : null,
           })),
         }).then((r) => {
           if (!r.error) {
@@ -143,13 +136,7 @@ export function TargetEditor({
     );
   }
 
-  const setQty = (id: string, v: string) => setRows((r) => ({ ...r, [id]: { ...r[id], qty: v } }));
-  const setMonth = (id: string, i: number, v: string) =>
-    setRows((r) => {
-      const monthly = [...r[id].monthly];
-      monthly[i] = v;
-      return { ...r, [id]: { ...r[id], monthly } };
-    });
+  const setQty = (id: string, v: string) => setRows((r) => ({ ...r, [id]: { qty: v } }));
 
   return (
     <div className="space-y-4">
@@ -171,7 +158,8 @@ export function TargetEditor({
                 <tr className="text-left text-xs text-muted-foreground">
                   <th className="py-1 pr-2">Kategori</th>
                   <th className="px-1 py-1">Birim</th>
-                  <th className="px-1 py-1 text-right">Yıllık hedef</th>
+                  <th className="px-1 py-1 text-right">Hedef</th>
+                  <th className="px-1 py-1 text-right">Yıllık</th>
                   <th className="px-1 py-1 text-right">Sevk edilen</th>
                 </tr>
               </thead>
@@ -185,7 +173,6 @@ export function TargetEditor({
                     shipped={shipped[c.id] ?? 0}
                     pending={pending}
                     onQty={(v) => setQty(c.id, v)}
-                    onMonth={(i, v) => setMonth(c.id, i, v)}
                   />
                 ))}
               </tbody>
@@ -193,7 +180,7 @@ export function TargetEditor({
           </div>
           <p className="text-xs text-muted-foreground">
             Sevk edilen miktarlar haftalık sevkiyat dosyasından gelir; burada yalnızca hedef girilir.
-            PU Mastik hedefi ay ay girilir, yıllık toplam otomatik hesaplanır.
+            PU Mastik için aylık hak girilir (örn. her ay 15 palet); yıllık hedef bunun 12 katıdır.
           </p>
           <div className="space-y-1">
             <Label htmlFor="tg-note">Not</Label>
@@ -298,7 +285,6 @@ function RowGroup({
   shipped,
   pending,
   onQty,
-  onMonth,
 }: {
   c: SalesCategory;
   row: Row;
@@ -306,56 +292,28 @@ function RowGroup({
   shipped: number;
   pending: boolean;
   onQty: (v: string) => void;
-  onMonth: (i: number, v: string) => void;
 }) {
   return (
-    <>
-      <tr className="border-t">
-        <td className="py-1.5 pr-2 font-medium">{c.label_tr}</td>
-        <td className="px-1 py-1.5 text-xs text-muted-foreground">{c.unit}</td>
-        <td className="px-1 py-1.5 text-right">
-          {c.monthly ? (
-            <span className="tabular-nums">{fmtQtyUnit(yearly, c.unit)}</span>
-          ) : (
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={c.unit === "adet" ? 1 : 0.5}
-              className="ml-auto h-9 w-28 text-right"
-              value={row.qty}
-              disabled={pending}
-              onChange={(e) => onQty(e.target.value)}
-            />
-          )}
-        </td>
-        <td className="px-1 py-1.5 text-right tabular-nums text-muted-foreground">
-          {fmtQtyUnit(shipped, c.unit)}
-        </td>
-      </tr>
-      {c.monthly && (
-        <tr>
-          <td colSpan={4} className="pb-2 pl-4">
-            <div className="grid grid-cols-4 gap-1 sm:grid-cols-6 md:grid-cols-12">
-              {MONTHS_TR_SHORT.map((m, i) => (
-                <label key={m} className="space-y-0.5">
-                  <span className="block text-[10px] uppercase text-muted-foreground">{m}</span>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step={0.5}
-                    className="h-8 px-1 text-right text-xs"
-                    value={row.monthly[i]}
-                    disabled={pending}
-                    onChange={(e) => onMonth(i, e.target.value)}
-                  />
-                </label>
-              ))}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
+    <tr className="border-t">
+      <td className="py-1.5 pr-2 font-medium">
+        {c.label_tr}
+        {c.monthly && <span className="block text-xs font-normal text-muted-foreground">aylık hak</span>}
+      </td>
+      <td className="px-1 py-1.5 text-xs text-muted-foreground">{c.monthly ? `${c.unit}/ay` : c.unit}</td>
+      <td className="px-1 py-1.5 text-right">
+        <Input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={c.unit === "adet" ? 1 : 0.5}
+          className="ml-auto h-9 w-28 text-right"
+          value={row.qty}
+          disabled={pending}
+          onChange={(e) => onQty(e.target.value)}
+        />
+      </td>
+      <td className="px-1 py-1.5 text-right tabular-nums text-muted-foreground">{fmtQtyUnit(yearly, c.unit)}</td>
+      <td className="px-1 py-1.5 text-right tabular-nums text-muted-foreground">{fmtQtyUnit(shipped, c.unit)}</td>
+    </tr>
   );
 }

@@ -127,6 +127,15 @@ export function expectedMonthly(monthly: number[], year: number, todayIso: strin
   return sum;
 }
 
+/** Monthly allowance of a monthly-category line ("her ay 15 palet"). */
+export const monthlyAllowance = (l: { target_qty: number; monthly_qty: number[] | null }): number => {
+  const m = normalizeMonthly(l.monthly_qty);
+  const first = m.find((v) => v > 0);
+  if (first != null && m.every((v) => v === 0 || v === first)) return first;
+  const yearly = Number(l.target_qty) || 0;
+  return Math.round((yearly / 12) * 10) / 10;
+};
+
 export const normalizeMonthly = (v: unknown): number[] =>
   Array.from({ length: 12 }, (_, i) => {
     const n = Array.isArray(v) ? Number(v[i]) : 0;

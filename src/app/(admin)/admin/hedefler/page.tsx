@@ -162,12 +162,19 @@ export default async function TargetsPage({
                   <td className="px-3 py-2">
                     {r.m && (r.m.target > 0 || r.m.shipped > 0) ? (
                       <span className="tabular-nums">
-                        {fmtQtyUnit(r.m.shipped, "palet")}
-                        {r.m.target > 0 ? ` / ${fmtQtyUnit(r.m.target, "palet")}` : ""} palet
-                        {r.m.month && r.m.target > 0 && (
-                          <span className="block text-xs text-muted-foreground">
-                            bu ay kalan {fmtUnit(r.m.month.remaining, "palet")}
-                          </span>
+                        {r.m.month && r.m.target > 0 ? (
+                          <>
+                            bu ay {fmtQtyUnit(r.m.month.shipped, "palet")} / {fmtQtyUnit(r.m.month.target, "palet")} palet
+                            <span className="block text-xs text-muted-foreground">
+                              kalan {fmtUnit(r.m.month.remaining, "palet")} · yıl {fmtQtyUnit(r.m.shipped, "palet")} /{" "}
+                              {fmtQtyUnit(r.m.target, "palet")}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            {fmtQtyUnit(r.m.shipped, "palet")}
+                            {r.m.target > 0 ? ` / ${fmtQtyUnit(r.m.target, "palet")}` : ""} palet
+                          </>
                         )}
                       </span>
                     ) : (

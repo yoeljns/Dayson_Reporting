@@ -10,14 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
-import { MONTHS_TR_SHORT, fmtQtyUnit, normalizeMonthly } from "@/lib/rules/target";
+import { fmtQtyUnit, monthlyAllowance } from "@/lib/rules/target";
 import { TARGET_PROPOSAL_STATUS_LABELS } from "@/lib/enums";
 import { formatTRDate } from "@/lib/week";
 import type { SalesCategory } from "@/types/db";
 import type { TargetProposalView } from "@/lib/targets/server";
 import { submitTargetProposal } from "@/app/(app)/hedef/actions";
 
-type Row = { qty: string; monthly: string[] };
+type Row = { qty: string };
 const num = (s: string) => {
   const n = Number(String(s).replace(",", "."));
   return Number.isFinite(n) && n >= 0 ? n : 0;
@@ -52,9 +52,11 @@ export function TargetProposalForm({
     const m: Record<string, Row> = {};
     for (const c of categories) {
       const prop = editingPending ? latest?.lines[c.code] : undefined;
-      const qty = prop ? prop.target_qty : (current[c.id]?.target ?? 0);
-      const monthly = normalizeMonthly(prop ? prop.monthly_qty : current[c.id]?.monthly);
-      m[c.id] = { qty: qty > 0 ? String(qty) : "", monthly: monthly.map((v) => (v > 0 ? String(v) : "")) };
+      const src = prop
+        ? { target_qty: prop.target_qty, monthly_qty: prop.monthly_qty }
+        : { target_qty: current[c.id]?.target ?? 0, monthly_qty: current[c.id]?.monthly ?? null };
+      const qty = c.monthly ? monthlyAllowance(src) : src.target_qty;
+      m[c.id] = { qty: qty > 0 ? String(qty) : "" };
     }
     return m;
   });
@@ -70,8 +72,8 @@ export function TargetProposalForm({
         note,
         lines: categories.map((c) => ({
           salesCategoryId: c.id,
-          targetQty: num(rows[c.id].qty),
-          monthly: c.monthly ? rows[c.id].monthly.map(num) : null,
+          targetQty: c.monthly ? num(rows[c.id].qty) * 12 : num(rows[c.id].qty),
+          monthly: c.monthly ? Array(12).fill(num(rows[c.id].qty)) : null,
         })),
       });
       if (res.error) {
@@ -84,8 +86,6 @@ export function TargetProposalForm({
     });
   }
 
-  const yearlyOf = (c: SalesCategory) =>
-    c.monthly ? rows[c.id].monthly.reduce((a, s) => a + num(s), 0) : num(rows[c.id].qty);
 
   return (
     <Card>
@@ -137,17 +137,13 @@ export function TargetProposalForm({
                       key={c.id}
                       c={c}
                       row={rows[c.id]}
-                      current={current[c.id]?.target ?? 0}
-                      yearly={yearlyOf(c)}
-                      pending={pending}
-                      onQty={(v) => setRows((r) => ({ ...r, [c.id]: { ...r[c.id], qty: v } }))}
-                      onMonth={(i, v) =>
-                        setRows((r) => {
-                          const monthly = [...r[c.id].monthly];
-                          monthly[i] = v;
-                          return { ...r, [c.id]: { ...r[c.id], monthly } };
-                        })
+                      current={
+                        c.monthly
+                          ? monthlyAllowance({ target_qty: current[c.id]?.target ?? 0, monthly_qty: current[c.id]?.monthly ?? null })
+                          : (current[c.id]?.target ?? 0)
                       }
+                      pending={pending}
+                      onQty={(v) => setRows((r) => ({ ...r, [c.id]: { qty: v } }))}
                     />
                   ))}
                 </tbody>
@@ -179,69 +175,37 @@ function ProposalRow({
   c,
   row,
   current,
-  yearly,
   pending,
   onQty,
-  onMonth,
 }: {
   c: SalesCategory;
   row: Row;
   current: number;
-  yearly: number;
   pending: boolean;
   onQty: (v: string) => void;
-  onMonth: (i: number, v: string) => void;
 }) {
   return (
-    <>
-      <tr className="border-t">
-        <td className="py-1.5 pr-2">
-          {c.label_tr}
-          <span className="ml-1 text-xs text-muted-foreground">{c.unit}</span>
-        </td>
-        <td className="px-1 py-1.5 text-right tabular-nums text-muted-foreground">
-          {current > 0 ? fmtQtyUnit(current, c.unit) : "—"}
-        </td>
-        <td className="px-1 py-1.5 text-right">
-          {c.monthly ? (
-            <span className="tabular-nums">{fmtQtyUnit(yearly, c.unit)}</span>
-          ) : (
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={c.unit === "adet" ? 1 : 0.5}
-              className="ml-auto h-9 w-24 text-right"
-              value={row.qty}
-              disabled={pending}
-              onChange={(e) => onQty(e.target.value)}
-            />
-          )}
-        </td>
-      </tr>
-      {c.monthly && (
-        <tr>
-          <td colSpan={3} className="pb-2 pl-2">
-            <div className="grid grid-cols-4 gap-1 sm:grid-cols-6">
-              {MONTHS_TR_SHORT.map((m, i) => (
-                <label key={m} className="space-y-0.5">
-                  <span className="block text-[10px] uppercase text-muted-foreground">{m}</span>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    step={0.5}
-                    className="h-8 px-1 text-right text-xs"
-                    value={row.monthly[i]}
-                    disabled={pending}
-                    onChange={(e) => onMonth(i, e.target.value)}
-                  />
-                </label>
-              ))}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
+    <tr className="border-t">
+      <td className="py-1.5 pr-2">
+        {c.label_tr}
+        <span className="ml-1 text-xs text-muted-foreground">{c.monthly ? `${c.unit}/ay` : c.unit}</span>
+        {c.monthly && <span className="block text-xs text-muted-foreground">aylık hak</span>}
+      </td>
+      <td className="px-1 py-1.5 text-right tabular-nums text-muted-foreground">
+        {current > 0 ? fmtQtyUnit(current, c.unit) : "—"}
+      </td>
+      <td className="px-1 py-1.5 text-right">
+        <Input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={c.unit === "adet" ? 1 : 0.5}
+          className="ml-auto h-9 w-24 text-right"
+          value={row.qty}
+          disabled={pending}
+          onChange={(e) => onQty(e.target.value)}
+        />
+      </td>
+    </tr>
   );
 }

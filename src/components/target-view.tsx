@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { PercentBar } from "@/components/ui/percent-bar";
 import { PACE_LABELS, TARGET_STATUS_LABELS, type Pace, type TargetStatus as TargetStatusKey } from "@/lib/enums";
-import { MONTHS_TR_SHORT, fmtEur, fmtQtyUnit, fmtUnit, type TargetStatus } from "@/lib/rules/target";
+import { MONTHS_TR_SHORT, fmtEur, fmtQtyUnit, fmtUnit, monthlyAllowance, type TargetStatus } from "@/lib/rules/target";
 import type { TargetRevisionView } from "@/lib/targets/server";
 import type { SalesCategory } from "@/types/db";
 import { formatTRDate } from "@/lib/week";
@@ -99,7 +99,21 @@ function LineRows({ l, compact }: { l: TargetStatus["lines"][number]; compact: b
           {l.category.label_tr}
           <span className="ml-1 text-xs text-muted-foreground">{u}</span>
         </td>
-        <td className="px-2 py-1.5 text-right tabular-nums">{l.target > 0 ? fmtQtyUnit(l.target, u) : "—"}</td>
+        <td className="px-2 py-1.5 text-right tabular-nums">
+          {l.target > 0 ? (
+            l.monthly ? (
+              <>
+                {fmtQtyUnit(monthlyAllowance({ target_qty: l.target, monthly_qty: l.monthly }), u)}
+                <span className="text-xs text-muted-foreground">/ay</span>
+                <span className="block text-xs text-muted-foreground">yıl {fmtQtyUnit(l.target, u)}</span>
+              </>
+            ) : (
+              fmtQtyUnit(l.target, u)
+            )
+          ) : (
+            "—"
+          )}
+        </td>
         <td className="px-2 py-1.5 text-right tabular-nums">{fmtQtyUnit(l.shipped, u)}</td>
         <td className="px-2 py-1.5 text-right tabular-nums">{l.target > 0 ? fmtQtyUnit(l.remaining, u) : "—"}</td>
         {!compact && (
@@ -114,7 +128,7 @@ function LineRows({ l, compact }: { l: TargetStatus["lines"][number]; compact: b
       {l.month && l.target > 0 && (
         <tr className="border-b bg-muted/30 text-xs last:border-0">
           <td colSpan={compact ? 5 : 6} className="px-2 py-1.5">
-            <span className="font-medium">Bu ay ({MONTHS_TR_SHORT[l.month.index]}):</span> hedef{" "}
+            <span className="font-medium">Bu ay ({MONTHS_TR_SHORT[l.month.index]}):</span> hak{" "}
             {fmtUnit(l.month.target, u)} · sevk {fmtUnit(l.month.shipped, u)} · kalan{" "}
             <span className={l.month.remaining > 0 ? "font-medium text-destructive" : "font-medium text-emerald-600"}>
               {fmtUnit(l.month.remaining, u)}
@@ -124,9 +138,8 @@ function LineRows({ l, compact }: { l: TargetStatus["lines"][number]; compact: b
                 {MONTHS_TR_SHORT.map((m, i) => (
                   <div key={m} className={i === l.month!.index ? "rounded bg-primary/10 px-1" : "px-1"}>
                     <div className="text-[10px] uppercase text-muted-foreground">{m}</div>
-                    <div className="tabular-nums">
+                    <div className={l.monthly![i] > 0 && l.byMonth[i] < l.monthly![i] && i < l.month!.index ? "tabular-nums text-destructive" : "tabular-nums"}>
                       {fmtQtyUnit(l.byMonth[i], u)}
-                      <span className="text-muted-foreground"> / {fmtQtyUnit(l.monthly![i], u)}</span>
                     </div>
                   </div>
                 ))}
@@ -162,12 +175,15 @@ function RevisionList({ revisions, categories }: { revisions: TargetRevisionView
                 {codes.map((code) => {
                   const c = byCode.get(code);
                   const unit = c?.unit ?? "koli";
-                  const a = r.before[code]?.target_qty ?? 0;
-                  const b = r.after[code]?.target_qty ?? 0;
+                  const monthly = Boolean(c?.monthly);
+                  const val = (x: { target_qty: number; monthly_qty: number[] | null } | undefined) =>
+                    !x ? 0 : monthly ? monthlyAllowance(x) : x.target_qty;
+                  const a = val(r.before[code]);
+                  const b = val(r.after[code]);
                   return (
                     <li key={code} className="tabular-nums">
                       {c?.label_tr ?? code}: {fmtQtyUnit(a, unit)} → <span className="font-medium">{fmtQtyUnit(b, unit)}</span>{" "}
-                      <span className="text-xs text-muted-foreground">{unit}</span>
+                      <span className="text-xs text-muted-foreground">{monthly ? `${unit}/ay` : unit}</span>
                     </li>
                   );
                 })}

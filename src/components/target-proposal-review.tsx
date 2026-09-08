@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
-import { MONTHS_TR_SHORT, fmtQtyUnit } from "@/lib/rules/target";
+import { fmtQtyUnit, monthlyAllowance } from "@/lib/rules/target";
 import { formatTRDate } from "@/lib/week";
 import type { SalesCategory } from "@/types/db";
 import type { TargetProposalView } from "@/lib/targets/server";
@@ -46,10 +46,11 @@ export function TargetProposalReview({
   const rows = categories
     .map((c) => {
       const p = proposal.lines[c.code];
-      const cur = current[c.code]?.target ?? 0;
-      const next = p?.target_qty ?? 0;
+      const curLine = { target_qty: current[c.code]?.target ?? 0, monthly_qty: current[c.code]?.monthly ?? null };
+      const cur = c.monthly ? monthlyAllowance(curLine) : curLine.target_qty;
+      const next = !p ? 0 : c.monthly ? monthlyAllowance({ target_qty: p.target_qty, monthly_qty: p.monthly_qty }) : p.target_qty;
       if (!p && cur === 0) return null;
-      return { c, cur, next, monthly: p?.monthly_qty ?? null, changed: Math.abs(cur - next) > 0.05 };
+      return { c, cur, next, changed: Math.abs(cur - next) > 0.05 };
     })
     .filter((r): r is NonNullable<typeof r> => r != null);
 
@@ -74,16 +75,13 @@ export function TargetProposalReview({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ c, cur, next, monthly, changed }) => (
+              {rows.map(({ c, cur, next, changed }) => (
                 <tr key={c.id} className={changed ? "border-t font-medium" : "border-t text-muted-foreground"}>
                   <td className="py-1.5 pr-2">
                     {c.label_tr}
-                    <span className="ml-1 text-xs font-normal text-muted-foreground">{c.unit}</span>
-                    {monthly && (
-                      <span className="block text-xs font-normal text-muted-foreground">
-                        {monthly.map((v, i) => `${MONTHS_TR_SHORT[i]} ${fmtQtyUnit(v, c.unit)}`).join(" · ")}
-                      </span>
-                    )}
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      {c.monthly ? `${c.unit}/ay (yıllık ${fmtQtyUnit(next * 12, c.unit)})` : c.unit}
+                    </span>
                   </td>
                   <td className="px-1 py-1.5 text-right tabular-nums">{cur > 0 ? fmtQtyUnit(cur, c.unit) : "—"}</td>
                   <td className="px-1 py-1.5 text-right tabular-nums">{next > 0 ? fmtQtyUnit(next, c.unit) : "—"}</td>
