@@ -7,6 +7,7 @@ import { CompanyPicker, type PickedCompany } from "@/components/company-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/dictate-button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
@@ -235,6 +236,7 @@ export function ComplaintForm({
             <span className="text-destructive"> *</span>
           </Label>
           <Textarea id="desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+          <DictateButton onText={(t) => setDescription((d) => (d ? `${d} ${t}` : t))} />
         </div>
 
         {on("detected_at") && (

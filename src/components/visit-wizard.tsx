@@ -25,6 +25,9 @@ import { queueVisit, queueForm, isOnline, isNetworkError, OFFLINE_SAVED_MSG } fr
 import { cn } from "@/lib/utils";
 import { formatTRDate } from "@/lib/week";
 import { visitCode } from "@/lib/codes";
+import { VoiceReport } from "@/components/voice-report";
+import { DictateButton } from "@/components/dictate-button";
+import type { VoiceDictionary, VoiceDraft } from "@/lib/voice/parse-tr";
 import {
   answerIsComplete,
   missingRequired,
@@ -91,6 +94,8 @@ export function VisitWizard({
   addonSurveys = [],
   extraSlot,
   stepHints = {},
+  voiceDict = null,
+  today = "",
 }: {
   visitId: string;
   isOwner: boolean;
@@ -121,6 +126,9 @@ export function VisitWizard({
   /** Info line shown above a question step, keyed by question code
    *  (e.g. "Hedefin gerisinde" on the next-action step). */
   stepHints?: Partial<Record<string, string>>;
+  /** Parser dictionary for "Konuşarak doldur" (owner, open visit). */
+  voiceDict?: VoiceDictionary | null;
+  today?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -267,6 +275,32 @@ export function VisitWizard({
 
   // Step order (spec K1): ekle → amaç → kişi → ürünler →
   // hizmet veren bayi (alt bayi / potansiyel) → ek sorular → not.
+  /** Fill the form from a parsed voice transcript (never clears what the rep typed). */
+  function applyDraft(d: VoiceDraft) {
+    if (Object.keys(d.answers).length) setValues((p) => ({ ...p, ...d.answers }));
+    if (Object.keys(d.details).length) setDetails((p) => ({ ...p, ...d.details }));
+    if (d.products.length)
+      setProductSel((p) => {
+        const next = { ...p };
+        for (const it of d.products) {
+          const cur = next[it.categoryId] ?? { brands: [], supply: "" };
+          next[it.categoryId] = {
+            brands: Array.from(new Set([...cur.brands, ...it.brandIds])),
+            supply: it.supply || cur.supply,
+          };
+        }
+        return next;
+      });
+    if (d.contactId) setContactId(d.contactId);
+    else if (d.contactName) {
+      setNewName(d.contactName);
+      if (d.contactRole) setNewRole(d.contactRole);
+    }
+    const notes = byCode.get("serbest_not");
+    if (notes && d.note) setValues((p) => ({ ...p, [notes.id]: p[notes.id] ? `${p[notes.id]}\n${d.note}` : d.note }));
+    setMissingId(null);
+  }
+
   // Every applicable question except the contact-role one (answered via the
   // contact step) and the conditional skip — the quick screen renders these.
   const activeQuestions = useMemo(
@@ -792,6 +826,9 @@ export function VisitWizard({
         detail={details[q.id] ?? ""}
         onDetailChange={(v) => setDetail(q.id, v)}
         extra={q.code === "serbest_not" ? extraSlot : undefined}
+        onDictated={(n) => {
+          voiceChars.current += n;
+        }}
       />
     </div>
   );
@@ -801,6 +838,19 @@ export function VisitWizard({
     const optional = activeQuestions.filter((q) => !q.is_required && q.code !== "serbest_not");
     return (
       <div className="space-y-6">
+        {voiceDict && isOwner && !initialCompleted && (
+          <VoiceReport
+            dict={voiceDict}
+            today={today}
+            companyId={companyId}
+            visitId={visitId}
+            isDealer={companyKind === "distributor"}
+            onApply={applyDraft}
+            onChars={(n) => {
+              voiceChars.current += n;
+            }}
+          />
+        )}
         {required.map(questionBlock)}
         <div
           id="q-contact"
@@ -872,6 +922,9 @@ export function VisitWizard({
               detail={details[current.q.id] ?? ""}
               onDetailChange={(v) => setDetail(current.q.id, v)}
               extra={current.q.code === "serbest_not" ? extraSlot : undefined}
+              onDictated={(n) => {
+                voiceChars.current += n;
+              }}
             />
           )}
 
@@ -956,6 +1009,7 @@ function QuestionStep({
   detail,
   onDetailChange,
   extra,
+  onDictated,
 }: {
   q: QuestionWithOptions;
   value: string;
@@ -963,6 +1017,8 @@ function QuestionStep({
   detail: string;
   onDetailChange: (v: string) => void;
   extra?: React.ReactNode;
+  /** Called with the number of characters appended by voice dictation. */
+  onDictated?: (chars: number) => void;
 }) {
   const isSelect =
     q.input_type === "select" || q.input_type === "multiselect";
@@ -1049,17 +1105,25 @@ function QuestionStep({
         />
       )}
       {q.input_type === "text" && (
-        <Textarea
-          id={q.id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          rows={q.code === "serbest_not" ? 5 : 3}
-          placeholder={
-            q.code === "serbest_not"
-              ? "Görüşme özeti, sözler, dikkat edilecekler"
-              : undefined
-          }
-        />
+        <div className="space-y-2">
+          <Textarea
+            id={q.id}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            rows={q.code === "serbest_not" ? 5 : 3}
+            placeholder={
+              q.code === "serbest_not"
+                ? "Görüşme özeti, sözler, dikkat edilecekler"
+                : undefined
+            }
+          />
+          <DictateButton
+            onText={(t) => {
+              onChange(value ? `${value} ${t}` : t);
+              onDictated?.(t.length);
+            }}
+          />
+        </div>
       )}
       {isSelect && hasDiger && (
         <div className="space-y-1">

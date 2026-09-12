@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/dictate-button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Stepper } from "@/components/ui/stepper";
 import { CompanyPicker, type PickedCompany } from "@/components/company-picker";
@@ -244,6 +245,7 @@ export function StockCountForm({
               {star("note")}
             </Label>
             <Textarea id="sc-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+            <DictateButton onText={(t) => setNote((n) => (n ? `${n} ${t}` : t))} />
           </div>
         )}
 

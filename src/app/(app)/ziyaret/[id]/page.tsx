@@ -37,6 +37,7 @@ import { RecordPhotos } from "@/components/visit-photos";
 import { CompanyBrief } from "@/components/company-brief";
 import { BriefDisclosure } from "@/components/brief-disclosure";
 import { companyBrief } from "@/lib/companies/brief";
+import { loadVoiceDictionary } from "@/lib/voice/dictionary";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -331,6 +332,16 @@ export default async function VisitDetailPage({
     supplyKind: p.supply_kind as "brand" | "own_production" | "export",
   }));
 
+  // Voice dictionary for "Konuşarak doldur" (owner, open visit).
+  const voiceDict =
+    isOwner && company && visit.status !== "tamamlandi"
+      ? await loadVoiceDictionary(supabase, {
+          questions: applicable,
+          categories: categoryOptions,
+          contacts: ((contacts as CompanyContact[] | null) ?? []).map((c) => ({ id: c.id, name: c.name })),
+        })
+      : null;
+
   // Pre-visit brief while the visit is still open (owner only).
   const brief =
     isOwner && company && visit.status !== "tamamlandi"
@@ -447,6 +458,8 @@ export default async function VisitDetailPage({
           }[]) ?? []
         }
         previousProducts={previousProducts}
+        voiceDict={voiceDict}
+        today={todayIso()}
         contacts={(contacts as CompanyContact[]) ?? []}
         currentContactId={visit.contact_id as string | null}
         initialCompleted={visit.status === "tamamlandi"}

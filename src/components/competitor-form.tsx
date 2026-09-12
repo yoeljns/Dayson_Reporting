@@ -8,6 +8,7 @@ import { CompetitorProductChips, type PickedProduct } from "@/components/competi
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DictateButton } from "@/components/dictate-button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -299,6 +300,7 @@ export function CompetitorForm({
               {star("note")}
             </Label>
             <Textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+            <DictateButton onText={(t) => setNote((n) => (n ? `${n} ${t}` : t))} />
           </div>
         )}
 

@@ -27,6 +27,7 @@ const adminLinks: AdminLink[] = [
   { href: "/admin/kullanicilar", label: "Kullanıcılar", group: "Ayarlar", adminOnly: true },
   { href: "/admin/sorular", label: "Soru Kataloğu", group: "Ayarlar", adminOnly: true },
   { href: "/admin/formlar", label: "Form Alanları", group: "Ayarlar", adminOnly: true },
+  { href: "/admin/sesli-sozluk", label: "Sesli Sözlük", group: "Ayarlar", adminOnly: true },
   { href: "/admin/urun-rekabeti", label: "Ürün Matrisi", group: "Ayarlar", adminOnly: true },
   { href: "/admin/urunler", label: "Ürünler", group: "Ayarlar", adminOnly: true },
   { href: "/admin/rakip-urunleri", label: "Rakip Ürünleri", group: "Ayarlar", adminOnly: true },
