@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { validLatLng } from "@/lib/geo";
 import {
   SEGMENTS,
   DEBT_STATUSES,
@@ -342,5 +343,35 @@ export async function convertToDealer(input: {
   if (error) return { error: error.message };
   revalidateCompany(input.companyId);
   revalidatePath(`/firma/${input.companyId}`);
+  return { ok: true };
+}
+
+/** Manager sets a company's pin by hand (e.g. from the device while on site). */
+export async function setCompanyLocation(input: {
+  companyId: string;
+  lat: number;
+  lng: number;
+}): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const p = validLatLng(input.lat, input.lng);
+  if (!p) return { error: "Geçersiz konum." };
+  const { error } = await createAdminClient()
+    .from("companies")
+    .update({ lat: p.lat, lng: p.lng, location_source: "manual", located_at: new Date().toISOString() })
+    .eq("id", input.companyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/admin/bayi/${input.companyId}`);
+  revalidatePath(`/firma/${input.companyId}`);
+  return { ok: true };
+}
+
+export async function clearCompanyLocation(input: { companyId: string }): Promise<{ ok?: boolean; error?: string }> {
+  await requireManager();
+  const { error } = await createAdminClient()
+    .from("companies")
+    .update({ lat: null, lng: null, location_source: null, located_at: null })
+    .eq("id", input.companyId);
+  if (error) return { error: error.message };
+  revalidatePath(`/admin/bayi/${input.companyId}`);
   return { ok: true };
 }

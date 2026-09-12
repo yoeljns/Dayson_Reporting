@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireManager } from "@/lib/auth";
 import { CompanyNav } from "@/components/company-nav";
 import { CompanyBrief } from "@/components/company-brief";
+import { CompanyLocation } from "@/components/company-location";
+import { validLatLng } from "@/lib/geo";
 import { companyBrief } from "@/lib/companies/brief";
 import { companyNeighbours, hasListParams as hasListParamsIn, listQueryString, parseListParams, withQuery } from "@/lib/companies/list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,7 +71,7 @@ export default async function DealerFilePage({
   const { data: company } = await supabase
     .from("companies")
     .select(
-      "id, name, kind, logo_code, segment, debt_status, city, phone, notes, deleted_at"
+      "id, name, kind, logo_code, segment, debt_status, city, phone, notes, deleted_at, lat, lng, location_source, located_at"
     )
     .eq("id", companyId)
     .maybeSingle();
@@ -345,6 +347,12 @@ export default async function DealerFilePage({
               </Badge>
             )}
           </div>
+          <CompanyLocation
+            companyId={companyId}
+            location={validLatLng(company.lat, company.lng)}
+            source={(company.location_source as string | null) ?? null}
+            locatedAt={(company.located_at as string | null) ?? null}
+          />
 
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
             <Fact label="Telefon" value={company.phone || "—"} />

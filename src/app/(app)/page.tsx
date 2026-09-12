@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { EodReminderBanner } from "@/components/eod-reminder-banner";
 import { PlanDeadlineBanner } from "@/components/plan-deadline-banner";
 import { DoneCard } from "@/components/done-card";
+import { NearbyCompanies } from "@/components/nearby-companies";
 import { surveyMatches } from "@/lib/rules/survey";
 import { VISIT_TYPE_LABELS, COMPANY_KIND_LABELS, type CompanyKind } from "@/lib/enums";
 import type { Survey } from "@/types/db";
@@ -172,6 +173,8 @@ export default async function HomePage() {
           )}
         </p>
       </div>
+
+      <NearbyCompanies />
 
       {/* Primary actions */}
       <div className="space-y-3">

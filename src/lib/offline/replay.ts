@@ -44,7 +44,7 @@ async function runOp(op: Op): Promise<string | null> {
     if (r1.error) return r1.error;
     const r2 = await setVisitContact({ visitId: p.visitId, contactId: p.contactId });
     if (r2.error) return r2.error;
-    const r3 = await saveVisit({ visitId: p.visitId, answers: p.answers, complete: p.complete });
+    const r3 = await saveVisit({ visitId: p.visitId, answers: p.answers, complete: p.complete, location: p.location ?? null });
     if (r3.error) return r3.error;
     return null;
   }

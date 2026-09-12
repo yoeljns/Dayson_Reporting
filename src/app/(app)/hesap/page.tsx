@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { cookies } from "next/headers";
 import { THEME_COOKIE, parseTheme } from "@/lib/theme";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GeoConsentToggle } from "@/components/geo-consent-toggle";
 import { canSwitchMode, isManagementMode } from "@/lib/ui-mode";
 import { USER_ROLE_LABELS } from "@/lib/enums";
 
@@ -51,6 +52,20 @@ export default async function AccountPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Konum</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Açıkken ana sayfada yakınınızdaki firma önerilir ve bir ziyareti tamamlarken bulunduğunuz konum o ziyarete
+            yazılır (sürekli takip yoktur, yalnız o an). Firmanın konumu ilk yüz yüze ziyaretinizden öğrenilir. Bu ayar
+            yalnızca bu cihaz içindir; tarayıcının konum iznini de kapatabilirsiniz.
+          </p>
+          <GeoConsentToggle />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

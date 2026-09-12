@@ -48,6 +48,10 @@ export interface Company {
   buys_from_company_id: string | null;
   created_by: string | null;
   deleted_at: string | null;
+  lat: number | null;
+  lng: number | null;
+  location_source: "first_visit" | "manual" | null;
+  located_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -104,6 +108,10 @@ export interface Visit {
   contact_id: string | null;
   deleted_at: string | null;
   deleted_by: string | null;
+  lat: number | null;
+  lng: number | null;
+  accuracy_m: number | null;
+  located_at: string | null;
   created_at: string;
   updated_at: string;
 }

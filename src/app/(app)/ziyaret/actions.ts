@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { todayIso } from "@/lib/week";
+import { validLatLng } from "@/lib/geo";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { hasServiceKey } from "@/lib/supabase/env";
 import {
   FIELD_REGISTRABLE_KINDS,
   type VisitType,
@@ -377,6 +380,8 @@ export async function saveVisit(input: {
     valueDetail?: string | null;
   }>;
   complete: boolean;
+  /** One-shot GPS fix from the device when completing (optional, rep's choice). */
+  location?: { lat: number; lng: number; accuracy: number | null } | null;
 }): Promise<{ ok?: boolean; error?: string }> {
   const supabase = createClient();
   const {
@@ -388,7 +393,7 @@ export async function saveVisit(input: {
   // re-edited completed visit of their own) — never someone else's record.
   const { data: visit } = await supabase
     .from("visits")
-    .select("salesperson_id, visit_type, deleted_at, contact_id, companies(kind)")
+    .select("salesperson_id, visit_type, deleted_at, contact_id, companies(kind), company_id")
     .eq("id", input.visitId)
     .maybeSingle();
   if (!visit) return { error: "Ziyaret bulunamadı." };
@@ -453,16 +458,31 @@ export async function saveVisit(input: {
   });
   if (error) return { error: error.message };
 
+  const loc = input.location ? validLatLng(input.location.lat, input.location.lng) : null;
+  const accuracy = loc && Number.isFinite(Number(input.location?.accuracy)) ? Math.round(Number(input.location?.accuracy)) : null;
   const { error: vErr } = await supabase
     .from("visits")
     .update({
       status: input.complete ? "tamamlandi" : "taslak",
       completed_at: input.complete ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
+      ...(loc ? { lat: loc.lat, lng: loc.lng, accuracy_m: accuracy, located_at: new Date().toISOString() } : {}),
     })
     .eq("id", input.visitId);
 
   if (vErr) return { error: vErr.message };
+
+  // First accurate face-to-face completion teaches the company's pin (office can reset it).
+  if (loc && input.complete && visit.visit_type === "yuz_yuze" && (accuracy == null || accuracy <= 150) && hasServiceKey()) {
+    const admin = createAdminClient();
+    const { data: c } = await admin.from("companies").select("lat").eq("id", visit.company_id).maybeSingle();
+    if (c && c.lat == null) {
+      await admin
+        .from("companies")
+        .update({ lat: loc.lat, lng: loc.lng, location_source: "first_visit", located_at: new Date().toISOString() })
+        .eq("id", visit.company_id);
+    }
+  }
   revalidatePath("/");
   revalidatePath("/ziyaretler");
   return { ok: true };

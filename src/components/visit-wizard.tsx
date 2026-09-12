@@ -25,6 +25,7 @@ import { queueVisit, queueForm, isOnline, isNetworkError, OFFLINE_SAVED_MSG } fr
 import { cn } from "@/lib/utils";
 import { formatTRDate } from "@/lib/week";
 import { visitCode } from "@/lib/codes";
+import { getPosition } from "@/lib/geo-client";
 import { VoiceReport } from "@/components/voice-report";
 import { DictateButton } from "@/components/dictate-button";
 import type { VoiceDictionary, VoiceDraft } from "@/lib/voice/parse-tr";
@@ -535,6 +536,8 @@ export function VisitWizard({
   /** Save everything; returns an error message or null. Never throws — a
    *  dropped connection must not silently escape startTransition. */
   async function saveAll(complete: boolean): Promise<string | null> {
+    // One-shot position on completion (rep's device setting; null when off/denied/slow).
+    const location = complete ? await getPosition(6000) : null;
     const queueOffline = async () => {
       try {
         await queueVisit(`Ziyaret · ${companyName}`, {
@@ -547,6 +550,7 @@ export function VisitWizard({
           selections: buildProductSelections(),
           contactId,
           complete,
+          location,
         });
         queuedRef.current = true;
         return null;
@@ -567,6 +571,7 @@ export function VisitWizard({
         visitId,
         answers: buildAnswers(),
         complete,
+        location,
       });
       if (p3.error) return p3.error;
       return null;

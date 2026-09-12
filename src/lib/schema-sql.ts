@@ -2463,4 +2463,22 @@ drop policy if exists voice_aliases_insert on voice_aliases;
 create policy voice_aliases_insert on voice_aliases for insert with check (auth.uid() is not null and created_by = auth.uid());
 drop policy if exists voice_aliases_delete on voice_aliases;
 create policy voice_aliases_delete on voice_aliases for delete using (is_manager() or created_by = auth.uid());
+
+-- ────── 0037_locations.sql ──────
+-- ============================================================================
+-- Locations: where a visit was completed (one-shot GPS fix, with the rep's
+-- permission) and where a company is (learned from the first face-to-face
+-- visit, editable by the office). Used for "nearby company" suggestions and
+-- a distance badge on the manager's visit list.
+-- Idempotent — bundled into PATCH_SQL.
+-- ============================================================================
+alter table companies add column if not exists lat double precision;
+alter table companies add column if not exists lng double precision;
+alter table companies add column if not exists location_source text;   -- 'first_visit' | 'manual'
+alter table companies add column if not exists located_at timestamptz;
+alter table visits add column if not exists lat double precision;
+alter table visits add column if not exists lng double precision;
+alter table visits add column if not exists accuracy_m int;
+alter table visits add column if not exists located_at timestamptz;
+create index if not exists idx_companies_located on companies(lat) where lat is not null;
 `;

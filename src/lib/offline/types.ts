@@ -23,6 +23,8 @@ export interface VisitOpPayload {
     supplyKind?: "brand" | "own_production" | "export";
   }>;
   contactId: string | null;
+  /** One-shot GPS fix taken when the rep completed the visit (optional). */
+  location?: { lat: number; lng: number; accuracy: number | null } | null;
   /** Skip products/contact/answers (bare draft from the new-visit screen). */
   bare?: boolean;
   complete: boolean;

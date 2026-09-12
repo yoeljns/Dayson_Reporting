@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { distanceMeters, fmtDistance, validLatLng, FAR_METERS } from "@/lib/geo";
 import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,8 +22,13 @@ type Row = {
   visit_type: VisitType;
   status: VisitStatus;
   visit_date: string;
+  lat: number | null;
+  lng: number | null;
   company_id: string;
-  companies: { name: string; city: string | null } | { name: string; city: string | null }[] | null;
+  companies:
+    | { name: string; city: string | null; lat: number | null; lng: number | null }
+    | { name: string; city: string | null; lat: number | null; lng: number | null }[]
+    | null;
   salesperson: { full_name: string } | { full_name: string }[] | null;
 };
 
@@ -55,7 +61,7 @@ export default async function ManagerVisitHistoryPage({
   let query = supabase
     .from("visits")
     .select(
-      "id, visit_type, status, visit_date, company_id, companies(name, city), salesperson:salesperson_id(full_name)"
+      "id, visit_type, status, visit_date, company_id, lat, lng, companies(name, city, lat, lng), salesperson:salesperson_id(full_name)"
     )
     .is("deleted_at", null)
     .order("visit_date", { ascending: false })
@@ -222,6 +228,19 @@ export default async function ManagerVisitHistoryPage({
                         {VISIT_TYPE_LABELS[v.visit_type]} · {v.visit_date} ·{" "}
                         {sp?.full_name ?? "—"}
                         {company?.city ? ` · ${company.city}` : ""}
+                        {(() => {
+                          const vp = validLatLng(v.lat, v.lng);
+                          const cp = validLatLng(company?.lat, company?.lng);
+                          if (!vp) return null;
+                          if (!cp) return <span> · konum alındı</span>;
+                          const d = distanceMeters(vp, cp);
+                          return (
+                            <span className={d > FAR_METERS ? " font-medium text-destructive" : ""}>
+                              {" "}· firmaya {fmtDistance(d)}
+                              {d > FAR_METERS ? " ⚠" : ""}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <Badge
