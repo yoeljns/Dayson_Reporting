@@ -63,3 +63,35 @@ export async function loadVoiceDictionary(
     })),
   };
 }
+
+/**
+ * Company-independent dictionary for the driving mode: every active question,
+ * the global Raf Bilgisi matrix (plus the rep's own "Diğer" brands),
+ * competitors, SKUs and aliases. Contacts are unknown until a company is chosen.
+ */
+export async function loadGlobalVoiceDictionary(supabase: SupabaseClient, repId: string): Promise<VoiceDictionary> {
+  const [{ data: questions }, { data: cats }, { data: pcb }] = await Promise.all([
+    supabase.from("questions").select("*, question_options(*)").eq("is_active", true).order("sort_order"),
+    supabase.from("product_categories").select("id, label_tr").eq("is_active", true).order("sort_order"),
+    supabase
+      .from("product_category_brands")
+      .select("category_id, brand_id, product_brands!inner(name)")
+      .eq("product_brands.is_active", true)
+      .or(`salesperson_id.is.null,salesperson_id.eq.${repId}`),
+  ]);
+  const byCat = new Map<string, { brandId: string; name: string }[]>();
+  for (const r of (pcb as unknown as { category_id: string; brand_id: string; product_brands: { name: string } | { name: string }[] | null }[] | null) ?? []) {
+    const b = Array.isArray(r.product_brands) ? r.product_brands[0] : r.product_brands;
+    if (!b) continue;
+    (byCat.get(r.category_id) ?? byCat.set(r.category_id, []).get(r.category_id)!).push({ brandId: r.brand_id, name: b.name });
+  }
+  return loadVoiceDictionary(supabase, {
+    questions: (questions as QuestionWithOptions[] | null) ?? [],
+    categories: ((cats as { id: string; label_tr: string }[] | null) ?? []).map((c) => ({
+      id: c.id,
+      label_tr: c.label_tr,
+      brands: byCat.get(c.id) ?? [],
+    })),
+    contacts: [],
+  });
+}

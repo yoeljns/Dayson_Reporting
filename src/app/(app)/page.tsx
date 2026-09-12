@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   Search,
   Play,
+  Car,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
@@ -180,6 +181,11 @@ export default async function HomePage() {
             Yeni Ziyaret
           </Button>
         </Link>
+      <Link href="/surus" className="block">
+        <Button variant="outline" className="h-11 w-full">
+          <Car className="mr-2 h-4 w-4" /> Araç modu · sesli not
+        </Button>
+      </Link>
 
         <div className="grid grid-cols-2 gap-2">
           <Link href="/sikayet/yeni" className="block">
