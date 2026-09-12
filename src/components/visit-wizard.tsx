@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
-import { queueVisit, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
+import { queueVisit, queueForm, isOnline, isNetworkError, OFFLINE_SAVED_MSG } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 import { formatTRDate } from "@/lib/week";
 import { visitCode } from "@/lib/codes";
@@ -46,6 +46,7 @@ import {
   saveVisitProducts,
   upsertContact,
   addCustomBrand,
+  recordVisitMetric,
 } from "@/app/(app)/ziyaret/actions";
 
 export type BrandOption = { brandId: string; name: string; isOwn: boolean };
@@ -57,7 +58,11 @@ type StepDef =
   | { kind: "question"; q: QuestionWithOptions }
   | { kind: "contact" }
   | { kind: "products" }
-  | { kind: "photos" };
+  | { kind: "photos" }
+  | { kind: "quick" };
+
+type WizardMode = "hizli" | "detayli";
+const MODE_KEY = "dayson:visit-mode";
 
 /** Codes that get a dedicated step; everything else renders as an extra question. */
 const HANDLED_CODES = new Set([
@@ -129,6 +134,56 @@ export function VisitWizard({
   const queuedRef = useRef(false);
   const stepKey = `visit-step:${visitId}`;
   const [step, setStep] = useState(0);
+  // Hızlı mod (default): every required field on one screen. Detaylı mod is
+  // the classic step-by-step wizard. The choice is remembered on the device.
+  const [mode, setMode] = useState<WizardMode>("hizli");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(MODE_KEY) === "detayli") setMode("detayli");
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  function switchMode() {
+    const next: WizardMode = mode === "hizli" ? "detayli" : "hizli";
+    setMode(next);
+    setStep(0);
+    setMissingId(null);
+    try {
+      localStorage.setItem(MODE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }
+  // Which required field blocked completion (highlighted in quick mode).
+  const [missingId, setMissingId] = useState<string | null>(null);
+  // Reporting metric: seconds the screen was visible + voice usage.
+  const activeSec = useRef(0);
+  const voiceChars = useRef(0);
+  useEffect(() => {
+    if (!isOwner) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") activeSec.current += 1;
+    }, 1000);
+    return () => clearInterval(t);
+  }, [isOwner]);
+  function flushMetric(completed: boolean) {
+    const input = {
+      visitId,
+      secondsActive: activeSec.current,
+      mode,
+      voiceUsed: voiceChars.current > 0,
+      voiceChars: voiceChars.current,
+      completed,
+    };
+    activeSec.current = 0;
+    voiceChars.current = 0;
+    if (!isOnline()) {
+      void queueForm("metrik", "Rapor süresi", input).catch(() => undefined);
+      return;
+    }
+    void recordVisitMetric(input).catch(() => queueForm("metrik", "Rapor süresi", input).catch(() => undefined));
+  }
 
   // Resume where the rep left off (drafts only) — the step index lives on the
   // device, never in the DB.
@@ -212,7 +267,14 @@ export function VisitWizard({
 
   // Step order (spec K1): ekle → amaç → kişi → ürünler →
   // hizmet veren bayi (alt bayi / potansiyel) → ek sorular → not.
+  // Every applicable question except the contact-role one (answered via the
+  // contact step) and the conditional skip — the quick screen renders these.
+  const activeQuestions = useMemo(
+    () => questions.filter((q) => q.code !== "gorusulen_kisi_rolu" && !skipConditional(q)),
+    [questions, skipConditional]
+  );
   const steps = useMemo<StepDef[]>(() => {
+    if (mode === "hizli") return [{ kind: "quick" }];
     const out: StepDef[] = [];
     out.push({ kind: "addons" });
     const amac = byCode.get("ziyaret_amaci");
@@ -235,7 +297,7 @@ export function VisitWizard({
     // "Serbest not" can be deactivated by the office; keep the photo uploader.
     else if (extraSlot) out.push({ kind: "photos" });
     return out;
-  }, [byCode, catOptions.length, questions, skipConditional, extraSlot]);
+  }, [mode, byCode, catOptions.length, questions, skipConditional, extraSlot]);
 
   const total = steps.length;
   // A conditional question can vanish mid-flow — never point past the end.
@@ -376,23 +438,34 @@ export function VisitWizard({
     if (complete) {
       // Same rules as the server: every rendered required question must be
       // complete. Jump back to the first gap instead of failing silently.
-      const rendered = steps.flatMap((s) => (s.kind === "question" ? [s.q] : []));
+      const rendered =
+        mode === "hizli" ? activeQuestions : steps.flatMap((s) => (s.kind === "question" ? [s.q] : []));
       const missing = missingRequired(rendered, values, details, skipConditional);
       if (missing) {
-        const idx = steps.findIndex((s) => s.kind === "question" && s.q.id === missing.id);
-        if (idx >= 0) setStep(idx);
-        setError(`"${missing.label_tr}" alanı zorunludur — devam etmek için bu adımı doldur.`);
+        if (mode === "hizli") {
+          setMissingId(missing.id);
+          document.getElementById(`q-${missing.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else {
+          const idx = steps.findIndex((s) => s.kind === "question" && s.q.id === missing.id);
+          if (idx >= 0) setStep(idx);
+        }
+        setError(`"${missing.label_tr}" alanı zorunludur — devam etmek için bu alanı doldur.`);
         return;
       }
       if (contactRequired && contactId == null) {
-        setStep(steps.findIndex((s) => s.kind === "contact"));
+        if (mode === "hizli") {
+          setMissingId("contact");
+          document.getElementById("q-contact")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else setStep(steps.findIndex((s) => s.kind === "contact"));
         setError("Görüşülen kişi zorunludur.");
         return;
       }
+      setMissingId(null);
     }
     startTransition(async () => {
       const err = await saveAll(complete);
       if (err) return setError(err);
+      flushMetric(complete);
       autosaveSeq.current++; // a stale in-flight autosave may not re-warn
       setAutosaveWarn(false);
       if (queuedRef.current) {
@@ -487,32 +560,7 @@ export function VisitWizard({
     });
   }
 
-  const isLast = step >= total - 1;
-  const addonQuery = `company=${companyId}&visit=${visitId}&return=${encodeURIComponent(
-    `/ziyaret/${visitId}`
-  )}`;
-
-  return (
-    <div className="space-y-4">
-      {/* Progress */}
-      <div className="flex items-center gap-1">
-        {steps.map((_, i) => (
-          <div
-            key={i}
-            className={cn(
-              "h-1.5 flex-1 rounded-full",
-              i <= step ? "bg-primary" : "bg-muted"
-            )}
-          />
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Adım {step + 1} / {total}
-      </p>
-
-      <Card>
-        <CardContent className="space-y-4 p-4">
-          {current?.kind === "addons" && (
+  const renderAddons = () => (
             <div className="space-y-3">
               <Label>Bu ziyarete rapor eklemek ister misin?</Label>
               <p className="text-xs text-muted-foreground">
@@ -551,25 +599,9 @@ export function VisitWizard({
                 ))}
               </div>
             </div>
-          )}
+  );
 
-          {current?.kind === "question" && stepHints[current.q.code] && (
-            <p className="mb-3 rounded-md border border-[hsl(var(--gold))]/40 bg-[hsl(var(--gold-soft))] p-2.5 text-sm text-[hsl(var(--gold))]">
-              {stepHints[current.q.code]}
-            </p>
-          )}
-          {current?.kind === "question" && (
-            <QuestionStep
-              q={current.q}
-              value={values[current.q.id] ?? ""}
-              onChange={(v) => setVal(current.q.id, v)}
-              detail={details[current.q.id] ?? ""}
-              onDetailChange={(v) => setDetail(current.q.id, v)}
-              extra={current.q.code === "serbest_not" ? extraSlot : undefined}
-            />
-          )}
-
-          {current?.kind === "contact" && (
+  const renderContact = () => (
             <div className="space-y-3">
               <Label>
                 Görüşülen kişi
@@ -656,11 +688,9 @@ export function VisitWizard({
                 </div>
               </div>
             </div>
-          )}
+  );
 
-          {current?.kind === "photos" && <div className="space-y-3">{extraSlot}</div>}
-
-          {current?.kind === "products" && (
+  const renderProducts = () => (
             <div className="space-y-4">
               <Label>Raf Bilgisi</Label>
               {catOptions.map((c) => {
@@ -738,7 +768,118 @@ export function VisitWizard({
                 );
               })}
             </div>
+  );
+
+  const notesQ = byCode.get("serbest_not") ?? null;
+  const questionBlock = (q: QuestionWithOptions) => (
+    <div
+      key={q.id}
+      id={`q-${q.id}`}
+      className={cn("rounded-md", missingId === q.id && "ring-2 ring-destructive ring-offset-2")}
+    >
+      {stepHints[q.code] && (
+        <p className="mb-3 rounded-md border border-[hsl(var(--gold))]/40 bg-[hsl(var(--gold-soft))] p-2.5 text-sm text-[hsl(var(--gold))]">
+          {stepHints[q.code]}
+        </p>
+      )}
+      <QuestionStep
+        q={q}
+        value={values[q.id] ?? ""}
+        onChange={(v) => {
+          setVal(q.id, v);
+          if (missingId === q.id) setMissingId(null);
+        }}
+        detail={details[q.id] ?? ""}
+        onDetailChange={(v) => setDetail(q.id, v)}
+        extra={q.code === "serbest_not" ? extraSlot : undefined}
+      />
+    </div>
+  );
+
+  const renderQuick = () => {
+    const required = activeQuestions.filter((q) => q.is_required && q.code !== "serbest_not");
+    const optional = activeQuestions.filter((q) => !q.is_required && q.code !== "serbest_not");
+    return (
+      <div className="space-y-6">
+        {required.map(questionBlock)}
+        <div
+          id="q-contact"
+          className={cn("rounded-md", missingId === "contact" && "ring-2 ring-destructive ring-offset-2")}
+        >
+          {renderContact()}
+        </div>
+        {notesQ ? questionBlock(notesQ) : extraSlot}
+        <details className="rounded-md border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Detay ekle
+            <span className="ml-1 font-normal text-muted-foreground">
+              (raf bilgisi, isteğe bağlı sorular, şikayet / rakip / stok)
+            </span>
+          </summary>
+          <div className="mt-4 space-y-6">
+            {renderAddons()}
+            {catOptions.length > 0 && renderProducts()}
+            {optional.map(questionBlock)}
+          </div>
+        </details>
+      </div>
+    );
+  };
+
+  const isLast = step >= total - 1;
+  const addonQuery = `company=${companyId}&visit=${visitId}&return=${encodeURIComponent(
+    `/ziyaret/${visitId}`
+  )}`;
+
+  return (
+    <div className="space-y-4">
+      {/* Mode + progress */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{mode === "hizli" ? "Hızlı mod: zorunlu alanlar tek ekranda" : `Adım ${step + 1} / ${total}`}</span>
+        {isOwner && (
+          <button type="button" className="underline" onClick={switchMode}>
+            {mode === "hizli" ? "Detaylı moda geç" : "Hızlı moda geç"}
+          </button>
+        )}
+      </div>
+      <div className={cn("flex items-center gap-1", mode === "hizli" && "hidden")}>
+        {steps.map((_, i) => (
+          <div
+            key={i}
+            className={cn(
+              "h-1.5 flex-1 rounded-full",
+              i <= step ? "bg-primary" : "bg-muted"
+            )}
+          />
+        ))}
+      </div>
+      <Card>
+        <CardContent className="space-y-4 p-4">
+          {current?.kind === "quick" && renderQuick()}
+
+          {current?.kind === "addons" && renderAddons()}
+
+          {current?.kind === "question" && stepHints[current.q.code] && (
+            <p className="mb-3 rounded-md border border-[hsl(var(--gold))]/40 bg-[hsl(var(--gold-soft))] p-2.5 text-sm text-[hsl(var(--gold))]">
+              {stepHints[current.q.code]}
+            </p>
           )}
+          {current?.kind === "question" && (
+            <QuestionStep
+              q={current.q}
+              value={values[current.q.id] ?? ""}
+              onChange={(v) => setVal(current.q.id, v)}
+              detail={details[current.q.id] ?? ""}
+              onDetailChange={(v) => setDetail(current.q.id, v)}
+              extra={current.q.code === "serbest_not" ? extraSlot : undefined}
+            />
+          )}
+
+          {current?.kind === "contact" && renderContact()}
+
+          {current?.kind === "photos" && <div className="space-y-3">{extraSlot}</div>}
+
+          {current?.kind === "products" && renderProducts()}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
@@ -759,13 +900,15 @@ export function VisitWizard({
 
       {/* Navigation */}
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          disabled={pending || step === 0}
-          onClick={() => setStep((s) => Math.max(0, s - 1))}
-        >
-          <ArrowLeft className="mr-1 h-4 w-4" /> Geri
-        </Button>
+        {mode !== "hizli" && (
+          <Button
+            variant="outline"
+            disabled={pending || step === 0}
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+          >
+            <ArrowLeft className="mr-1 h-4 w-4" /> Geri
+          </Button>
+        )}
         {isOwner && (
           <Button
             variant="ghost"

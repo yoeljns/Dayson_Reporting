@@ -1,7 +1,7 @@
 import type { DocumentRefTable } from "@/lib/enums";
 
 export type OpKind = "visit" | "visit.photos" | "form";
-export type FormKind = "sikayet" | "rakip" | "stok" | "anket" | "firma";
+export type FormKind = "sikayet" | "rakip" | "stok" | "anket" | "firma" | "metrik";
 
 export interface VisitOpPayload {
   visitId: string;

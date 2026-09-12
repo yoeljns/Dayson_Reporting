@@ -4,12 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { requireManager } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { todayIso, formatTRDate, isoDaysAgo } from "@/lib/week";
+import { todayIso, formatTRDate, isoDaysAgo, currentWeekStart } from "@/lib/week";
 import { analyzeBrandSwitch } from "@/lib/analytics/brand-switch";
 import { analyzeComplaints } from "@/lib/analytics/complaints";
 import { analyzeCoverage } from "@/lib/analytics/coverage";
+import { analyzeReporting, fmtDuration } from "@/lib/analytics/reporting";
 
 const PERIODS = [
+  { key: "hafta", label: "Bu hafta" },
   { key: "ay", label: "Bu ay" },
   { key: "3ay", label: "Son 3 ay" },
   { key: "yil", label: "Bu yıl" },
@@ -18,6 +20,7 @@ type PeriodKey = (typeof PERIODS)[number]["key"];
 
 function rangeFor(key: PeriodKey): { start: string; end: string } {
   const end = todayIso();
+  if (key === "hafta") return { start: currentWeekStart(), end };
   if (key === "3ay") return { start: isoDaysAgo(90, end), end };
   if (key === "yil") return { start: `${end.slice(0, 4)}-01-01`, end };
   return { start: `${end.slice(0, 7)}-01`, end }; // this month
@@ -35,10 +38,11 @@ export default async function AnalizPage({
     "ay") as PeriodKey;
   const { start, end } = rangeFor(period);
 
-  const [brand, complaints, coverage] = await Promise.all([
+  const [brand, complaints, coverage, reporting] = await Promise.all([
     analyzeBrandSwitch(supabase, start, end),
     analyzeComplaints(supabase, start, end),
     analyzeCoverage(supabase, start, end),
+    analyzeReporting(supabase, start, end),
   ]);
 
   const won = brand.transitions.filter((t) => t.won);
@@ -165,6 +169,51 @@ export default async function AnalizPage({
       </Section>
 
       {/* 3) Complaints */}
+      <Section
+        title="Raporlama disiplini"
+        note="Planlanan ziyaretlerin kaçı aynı gün raporlandı, bir rapor ne kadar sürüyor, hızlı mod ve sesli giriş ne kadar kullanılıyor."
+      >
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <BigStat
+            label="Raporlanmayan planlı ziyaret"
+            value={reporting.unreported}
+            tone={reporting.unreported > 0 ? "bad" : "good"}
+          />
+          <BigStat label="Ortanca rapor süresi" value={fmtDuration(reporting.medianSeconds)} tone="plain" />
+          <BigStat
+            label="Hızlı mod payı"
+            value={reporting.quickShare == null ? "—" : `%${Math.round(reporting.quickShare * 100)}`}
+            tone="plain"
+          />
+          <BigStat
+            label="Sesli giriş payı"
+            value={reporting.voiceShare == null ? "—" : `%${Math.round(reporting.voiceShare * 100)}`}
+            tone="plain"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {reporting.measured} ölçülen rapor · şu an {reporting.openDrafts} taslak ziyaret bekliyor.
+        </p>
+        {reporting.byRep.length === 0 ? (
+          <Empty>Pazarlamacı yok.</Empty>
+        ) : (
+          <Table headers={["Pazarlamacı", "Planlı", "Raporlanan", "Raporlanmayan", "Tamamlanan", "Ort. süre"]}>
+            {reporting.byRep.map((r) => (
+              <tr key={r.repId} className="border-b last:border-0">
+                <td className="py-1.5 pr-3">{r.name}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{r.planned}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{r.reported}</td>
+                <td className={cn("px-2 py-1.5 text-right tabular-nums", r.unreported > 0 && "font-medium text-destructive")}>
+                  {r.unreported}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{r.completedVisits}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fmtDuration(r.avgSeconds)}</td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Section>
+
       <Section
         title="Şikayetler"
         note="Şikayetleri ne kadar sürede kapatıyoruz, kaçı açık ve hangi üründen geliyor."

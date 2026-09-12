@@ -31,6 +31,7 @@ import { loadSalesCategories, shipmentTotalsFor } from "@/lib/sales/server";
 import { getPaceThresholds } from "@/lib/settings";
 import { todayIso, formatTRDate } from "@/lib/week";
 import { VisitDateEditor } from "@/components/visit-date-editor";
+import { VisitTypeToggle } from "@/components/visit-type-toggle";
 import type { Survey } from "@/types/db";
 import { RecordPhotos } from "@/components/visit-photos";
 import { CompanyBrief } from "@/components/company-brief";
@@ -353,7 +354,11 @@ export default async function VisitDetailPage({
           <h1 className="text-lg font-semibold">{company?.name}</h1>
           <p className="text-sm text-muted-foreground">
             <span className="font-mono">{visitCode(visit.id)}</span> ·{" "}
-            {VISIT_TYPE_LABELS[visit.visit_type as keyof typeof VISIT_TYPE_LABELS]}{" "}
+            {isOwner ? (
+              <VisitTypeToggle visitId={visit.id} visitType={visit.visit_type as VisitType} />
+            ) : (
+              VISIT_TYPE_LABELS[visit.visit_type as keyof typeof VISIT_TYPE_LABELS]
+            )}{" "}
             ·{" "}
             {isOwner ? (
               <VisitDateEditor visitId={visit.id} visitDate={visit.visit_date as string} />

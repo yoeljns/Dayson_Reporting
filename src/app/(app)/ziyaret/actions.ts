@@ -8,6 +8,7 @@ import {
   type VisitType,
   type SupplyKind,
   type CompanyKind,
+  VISIT_TYPES,
 } from "@/lib/enums";
 import type { QuestionWithOptions } from "@/types/db";
 import {
@@ -464,5 +465,73 @@ export async function saveVisit(input: {
   if (vErr) return { error: vErr.message };
   revalidatePath("/");
   revalidatePath("/ziyaretler");
+  return { ok: true };
+}
+
+/** Change a draft/completed visit's type (owner only). */
+export async function updateVisitType(input: {
+  visitId: string;
+  visitType: VisitType;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+  if (!(VISIT_TYPES as readonly string[]).includes(input.visitType)) return { error: "Geçersiz ziyaret türü." };
+  const { data: v } = await supabase
+    .from("visits")
+    .select("salesperson_id, deleted_at, company_id")
+    .eq("id", input.visitId)
+    .maybeSingle();
+  if (!v) return { error: "Ziyaret bulunamadı." };
+  if (v.salesperson_id !== user.id) return { error: "Yalnızca kendi ziyaretinizi düzenleyebilirsiniz." };
+  if (v.deleted_at) return { error: "Silinmiş ziyaret düzenlenemez." };
+  const { error } = await supabase
+    .from("visits")
+    .update({ visit_type: input.visitType, updated_at: new Date().toISOString() })
+    .eq("id", input.visitId);
+  if (error) return { error: error.message };
+  revalidatePath(`/ziyaret/${input.visitId}`);
+  revalidatePath("/ziyaretler");
+  return { ok: true };
+}
+
+/**
+ * Reporting metric for one visit: active seconds are accumulated, mode and
+ * voice flags overwritten, completed_at set once the visit is completed.
+ */
+export async function recordVisitMetric(input: {
+  visitId: string;
+  secondsActive: number;
+  mode: "hizli" | "detayli";
+  voiceUsed: boolean;
+  voiceChars: number;
+  completed: boolean;
+}): Promise<{ ok?: boolean; error?: string }> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Oturum bulunamadı." };
+  const secs = Math.max(0, Math.min(6 * 3600, Math.round(Number(input.secondsActive) || 0)));
+  const mode = input.mode === "detayli" ? "detayli" : "hizli";
+  const { data: ex } = await supabase
+    .from("visit_metrics")
+    .select("seconds_active, voice_used, voice_chars, completed_at")
+    .eq("visit_id", input.visitId)
+    .maybeSingle();
+  const now = new Date().toISOString();
+  const row = {
+    visit_id: input.visitId,
+    seconds_active: (Number(ex?.seconds_active) || 0) + secs,
+    mode,
+    voice_used: Boolean(ex?.voice_used) || Boolean(input.voiceUsed),
+    voice_chars: (Number(ex?.voice_chars) || 0) + Math.max(0, Math.round(Number(input.voiceChars) || 0)),
+    completed_at: input.completed ? now : (ex?.completed_at ?? null),
+    updated_at: now,
+  };
+  const { error } = await supabase.from("visit_metrics").upsert(row, { onConflict: "visit_id" });
+  if (error) return { error: error.message };
   return { ok: true };
 }

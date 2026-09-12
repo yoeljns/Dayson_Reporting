@@ -57,6 +57,8 @@ export default async function HomePage() {
     { data: plans },
     { data: todayPlanRaw },
     { data: todayVisits },
+    { data: weekPlanRaw },
+    { data: weekVisits },
     { data: activeSurveys },
     eod,
     planDeadline,
@@ -95,12 +97,30 @@ export default async function HomePage() {
       .eq("salesperson_id", profile.id)
       .eq("visit_date", today)
       .is("deleted_at", null),
+    // This week's plan up to today vs. completed visits → "12/14 raporlandı".
+    supabase
+      .from("visit_plan_items")
+      .select("company_id, planned_date, visit_plans!inner(salesperson_id, week_start)")
+      .eq("visit_plans.salesperson_id", profile.id)
+      .eq("visit_plans.week_start", thisWeek)
+      .lte("planned_date", today),
+    supabase
+      .from("visits")
+      .select("company_id, visit_date")
+      .eq("salesperson_id", profile.id)
+      .eq("status", "tamamlandi")
+      .gte("visit_date", thisWeek)
+      .lte("visit_date", today)
+      .is("deleted_at", null),
     supabase.from("surveys").select("*").eq("status", "aktif"),
     getEodReminder(),
     getPlanDeadline(),
   ]);
 
   const draftCount = drafts?.length ?? 0;
+  const weekDone = new Set(((weekVisits as { company_id: string; visit_date: string }[] | null) ?? []).map((v) => `${v.company_id}|${v.visit_date}`));
+  const weekPlanned = ((weekPlanRaw as unknown as { company_id: string; planned_date: string | null }[] | null) ?? []).filter((p) => p.planned_date);
+  const weekReported = weekPlanned.filter((p) => weekDone.has(`${p.company_id}|${p.planned_date}`)).length;
   const visitedToday = new Set((todayVisits ?? []).map((v) => v.company_id));
   const todayPlan = ((todayPlanRaw as unknown as PlanItemRow[] | null) ?? []).map((it) => ({
     ...it,
@@ -144,6 +164,11 @@ export default async function HomePage() {
         <p className="text-sm text-muted-foreground">
           Bugün {todayCount ?? 0} ziyaret tamamlandı
           {todayPlan.length > 0 && ` · planda ${todayPlan.length} firma`}
+          {weekPlanned.length > 0 && (
+            <span className={weekReported < weekPlanned.length ? " text-amber-700 dark:text-amber-400" : ""}>
+              {` · bu hafta ${weekReported}/${weekPlanned.length} planlı ziyaret raporlandı`}
+            </span>
+          )}
         </p>
       </div>
 
@@ -243,7 +268,7 @@ export default async function HomePage() {
                 {it.done ? (
                   <Badge variant="success">Yapıldı</Badge>
                 ) : (
-                  <Link href={`/ziyaret/yeni?company=${it.company_id}`}>
+                  <Link href={`/ziyaret/yeni?company=${it.company_id}&quick=1${it.visit_type ? `&type=${it.visit_type}` : ""}`}>
                     <Button size="sm">
                       <Play className="mr-1 h-3.5 w-3.5" /> Başlat
                     </Button>

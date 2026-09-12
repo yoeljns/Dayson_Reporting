@@ -17,6 +17,7 @@ import {
 import { groupAssignments, repsLabel } from "@/lib/assignments";
 import { getStaleDays, getPaceThresholds } from "@/lib/settings";
 import { pendingProposalsForYear, targetsForYear } from "@/lib/targets/server";
+import { analyzeReporting } from "@/lib/analytics/reporting";
 import { buildTargetStatus, fmtQtyUnit, fmtUnit } from "@/lib/rules/target";
 import { loadSalesCategories, shipmentTotalsForYear } from "@/lib/sales/server";
 import { PaceBadge } from "@/components/target-view";
@@ -82,6 +83,7 @@ export default async function ManagerDashboardPage() {
     shipmentsByCompany,
     salesCats,
     pendingProposals,
+    reporting,
     { data: todayPlanItems },
     { data: todayVisitRows },
   ] = await Promise.all([
@@ -184,6 +186,7 @@ export default async function ManagerDashboardPage() {
     shipmentTotalsForYear(supabase, year),
     loadSalesCategories(supabase),
     pendingProposalsForYear(supabase, year),
+    analyzeReporting(supabase, weekStart, today),
     // Today's planned items (this week's plans) — for plan adherence per rep.
     supabase
       .from("visit_plan_items")
@@ -592,6 +595,31 @@ export default async function ManagerDashboardPage() {
                 <Badge variant="warning">Onay bekliyor</Badge>
               </Link>
             ))}
+          </FollowUpCard>
+
+          <FollowUpCard
+            title="Raporlanmayan planlı ziyaretler (bu hafta)"
+            emptyText="Bu hafta planlanan her ziyaret raporlandı."
+            allHref="/admin/analiz?d=hafta"
+          >
+            {reporting.byRep
+              .filter((r) => r.unreported > 0)
+              .slice(0, 5)
+              .map((r) => (
+                <Link
+                  key={r.repId}
+                  href={`/admin/pazarlamaci/${r.repId}`}
+                  className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">{r.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {r.reported}/{r.planned} planlı ziyaret raporlandı
+                    </span>
+                  </span>
+                  <Badge variant="destructive">{r.unreported} eksik</Badge>
+                </Link>
+              ))}
           </FollowUpCard>
 
           <FollowUpCard

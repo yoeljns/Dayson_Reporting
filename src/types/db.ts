@@ -431,6 +431,17 @@ export interface DealerTargetProposal {
   updated_at: string;
 }
 
+export interface VisitMetric {
+  visit_id: string;
+  started_at: string;
+  completed_at: string | null;
+  seconds_active: number;
+  mode: "hizli" | "detayli";
+  voice_used: boolean;
+  voice_chars: number;
+  updated_at: string;
+}
+
 export interface ErpCustomer {
   cari_name: string;
   company_id: string | null;

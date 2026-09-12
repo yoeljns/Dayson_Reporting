@@ -11,6 +11,7 @@ import {
 } from "./types";
 import {
   createDraftVisit,
+  recordVisitMetric,
   saveVisitProducts,
   setVisitContact,
   saveVisit,
@@ -110,6 +111,10 @@ async function runOp(op: Op): Promise<string | null> {
     case "firma":
       r = await registerCompanyFromField(input);
       break;
+    case "metrik": {
+      const r = await recordVisitMetric(f.input as Parameters<typeof recordVisitMetric>[0]);
+      return r.error ?? null;
+    }
     default:
       return "Bilinmeyen kayıt türü.";
   }

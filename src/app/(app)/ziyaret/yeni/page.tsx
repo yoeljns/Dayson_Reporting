@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, useTransition } from "react";
+import { Suspense, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Phone, Users, ArrowLeft, Plus } from "lucide-react";
@@ -39,7 +39,13 @@ export default function NewVisitPage() {
 function NewVisitForm() {
   const router = useRouter();
   const { toast } = useToast();
-  const presetCompany = useSearchParams().get("company");
+  const sp = useSearchParams();
+  const presetCompany = sp.get("company");
+  const quick = sp.get("quick") === "1";
+  const presetType = (VISIT_TYPES as readonly string[]).includes(sp.get("type") ?? "")
+    ? (sp.get("type") as VisitType)
+    : "yuz_yuze";
+  const autoStarted = useRef(false);
   const today = todayIso();
   const [kind, setKind] = useState<CompanyKind>("distributor");
   const [selected, setSelected] = useState<Selected | null>(null);
@@ -62,6 +68,15 @@ function NewVisitForm() {
         if (data) setSelected({ id: data.id as string, name: data.name as string });
       });
   }, [presetCompany]);
+
+  // One-tap start (today's plan / nearby company): create the draft as soon
+  // as the company is known, skipping the type screen.
+  useEffect(() => {
+    if (!quick || !selected || autoStarted.current) return;
+    autoStarted.current = true;
+    handlePickType(presetType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quick, selected]);
 
   function handlePickType(visitType: VisitType) {
     if (!selected) return;
