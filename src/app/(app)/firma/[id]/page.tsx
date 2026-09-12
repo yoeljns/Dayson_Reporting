@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { VisitRecord } from "@/components/visit-record";
 import { CompanyNav } from "@/components/company-nav";
+import { CompanyBrief } from "@/components/company-brief";
+import { companyBrief } from "@/lib/companies/brief";
 import { companyNeighbours, listQueryString, withQuery } from "@/lib/companies/list";
 import { TargetView } from "@/components/target-view";
 import { StockHistory } from "@/components/stock-history";
@@ -138,6 +140,8 @@ export default async function CompanyCardPage({
     surveyMatches(s, { kind, plate: company.plate_code, repId: profile.id, date: today })
   );
 
+  const brief = tab === "ozet" ? await companyBrief(supabase, company.id, { isDealer, today }) : null;
+
   const q = `company=${company.id}`;
   const hrefFor = (k: string) => withQuery(`/firma/${company.id}`, `tab=${k}`, navQs);
 
@@ -221,6 +225,13 @@ export default async function CompanyCardPage({
 
       {tab === "ozet" && (
         <div className="space-y-3">
+          {brief && (
+            <Card>
+              <CardContent className="pt-4">
+                <CompanyBrief brief={brief} />
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardContent className="space-y-1.5 pt-4 text-sm">
               <Row label="Son ziyaret" value={last ? `${formatTRDate(last.visit_date)}${lastGap != null ? ` (${lastGap} gün önce)` : ""}` : "Hiç ziyaret yok"} />

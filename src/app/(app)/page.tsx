@@ -16,7 +16,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { isManagementMode } from "@/lib/ui-mode";
 import { getEodReminder, getPlanDeadline } from "@/lib/settings";
-import { todayIso, currentWeekStart, shiftWeek } from "@/lib/week";
+import { todayIso, currentWeekStart, shiftWeek, formatTRDate, daysSince } from "@/lib/week";
+import { planHints } from "@/lib/companies/brief";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -106,6 +107,7 @@ export default async function HomePage() {
     company: one(it.companies),
     done: visitedToday.has(it.company_id),
   }));
+  const hints = await planHints(supabase, Array.from(new Set(todayPlan.map((it) => it.company_id))));
   const surveys = ((activeSurveys as Survey[] | null) ?? []).filter((s) =>
     surveyMatches(s, { repId: profile.id, date: today })
   );
@@ -225,6 +227,18 @@ export default async function HomePage() {
                       : ""}
                     {it.note ? ` · ${it.note}` : ""}
                   </div>
+                  {(() => {
+                    const hnt = hints.get(it.company_id);
+                    if (!hnt || (!hnt.lastShipment && !hnt.lastVisit && !hnt.openComplaints)) return null;
+                    const lvd = daysSince(hnt.lastVisit);
+                    return (
+                      <div className="text-xs text-muted-foreground">
+                        {hnt.lastShipment ? `son sevk ${formatTRDate(hnt.lastShipment)}` : "sevk yok"}
+                        {hnt.lastVisit ? ` · son ziyaret ${lvd != null ? `${lvd} gün` : formatTRDate(hnt.lastVisit)}` : " · hiç ziyaret yok"}
+                        {hnt.openComplaints > 0 ? ` · ${hnt.openComplaints} açık şikayet` : ""}
+                      </div>
+                    );
+                  })()}
                 </div>
                 {it.done ? (
                   <Badge variant="success">Yapıldı</Badge>

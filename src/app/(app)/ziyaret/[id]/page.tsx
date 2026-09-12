@@ -33,6 +33,9 @@ import { todayIso, formatTRDate } from "@/lib/week";
 import { VisitDateEditor } from "@/components/visit-date-editor";
 import type { Survey } from "@/types/db";
 import { RecordPhotos } from "@/components/visit-photos";
+import { CompanyBrief } from "@/components/company-brief";
+import { BriefDisclosure } from "@/components/brief-disclosure";
+import { companyBrief } from "@/lib/companies/brief";
 
 const statusVariant: Record<
   ComplaintStatus,
@@ -327,6 +330,12 @@ export default async function VisitDetailPage({
     supplyKind: p.supply_kind as "brand" | "own_production" | "export",
   }));
 
+  // Pre-visit brief while the visit is still open (owner only).
+  const brief =
+    isOwner && company && visit.status !== "tamamlandi"
+      ? await companyBrief(supabase, company.id, { isDealer: company.kind === "distributor", today: todayIso() })
+      : null;
+
   return (
     <div
       className={cn(
@@ -334,6 +343,11 @@ export default async function VisitDetailPage({
         isOwner ? "max-w-md" : "max-w-3xl text-[15px] sm:text-base"
       )}
     >
+      {brief && (brief.lastShipment || brief.lastVisit || brief.openComplaints.count > 0 || brief.target) && (
+        <BriefDisclosure>
+          <CompanyBrief brief={brief} title={null} />
+        </BriefDisclosure>
+      )}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-lg font-semibold">{company?.name}</h1>

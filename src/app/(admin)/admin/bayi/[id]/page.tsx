@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireManager } from "@/lib/auth";
 import { CompanyNav } from "@/components/company-nav";
+import { CompanyBrief } from "@/components/company-brief";
+import { companyBrief } from "@/lib/companies/brief";
 import { companyNeighbours, hasListParams as hasListParamsIn, listQueryString, parseListParams, withQuery } from "@/lib/companies/list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -284,6 +286,7 @@ export default async function DealerFilePage({
   const listParams = hasListParams ? parseListParams(searchParams) : { tur: company.kind as string };
   const navQs = hasListParams ? listQueryString(listParams) : "";
   const neighbours = await companyNeighbours(createAdminClient(), listParams, companyId, 500);
+  const brief = await companyBrief(supabase, companyId, { isDealer, today: todayIso() });
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 text-[15px] leading-relaxed sm:text-base">
@@ -384,6 +387,14 @@ export default async function DealerFilePage({
           )}
         </CardContent>
       </Card>
+
+      {(brief.lastShipment || brief.lastVisit || brief.openComplaints.count > 0 || brief.target || brief.lastStock || brief.lastCompetitor) && (
+        <Card>
+          <CardContent className="pt-4">
+            <CompanyBrief brief={brief} />
+          </CardContent>
+        </Card>
+      )}
 
       {isDealer && (
         <Card>
